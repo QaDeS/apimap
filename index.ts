@@ -37,9 +37,10 @@ Usage: bun run index.ts [options]
 Options:
   --port <number>      Port to listen on (default: 3000)
   --endpoint <url>     OpenAI compatible endpoint URL (required)
-  --haiku <model>      Model mapping for claude-haiku-* (required)
-  --sonnet <model>     Model mapping for claude-sonnet-* (required)
-  --opus <model>       Model mapping for claude-opus-* (required)
+  --haiku <model>      Model mapping for claude-haiku-* (optional if --default set)
+  --sonnet <model>     Model mapping for claude-sonnet-* (optional if --default set)
+  --opus <model>       Model mapping for claude-opus-* (optional if --default set)
+  --default <model>    Default model mapping for unrecognized claude models (optional)
   --log-dir <path>     Directory to log conversations (optional)
   --cors-origin <url>  CORS origin (default: *, set to 'none' to disable)
   --timeout <seconds>  Request timeout in seconds (default: 120)
@@ -49,6 +50,9 @@ Example:
   bun run index.ts --port 3000 --endpoint https://api.openai.com/v1 \
     --haiku gpt-4o-mini --sonnet gpt-4o --opus gpt-4-turbo \
     --log-dir ./logs --timeout 60
+
+  bun run index.ts --endpoint https://api.openai.com/v1 \
+    --default gpt-4o  # Use gpt-4o for all claude models
 `);
   process.exit(0);
 }
@@ -66,6 +70,7 @@ const MODEL_MAPPINGS = {
   haiku: args.haiku,
   sonnet: args.sonnet,
   opus: args.opus,
+  default: args.default,
 };
 const LOG_DIR = args["log-dir"];
 const CORS_ORIGIN = args["cors-origin"] || "*";
@@ -77,8 +82,12 @@ if (!ENDPOINT) {
   showHelp();
 }
 
-if (!MODEL_MAPPINGS.haiku || !MODEL_MAPPINGS.sonnet || !MODEL_MAPPINGS.opus) {
-  console.error("Error: --haiku, --sonnet, and --opus are all required");
+// Either all three model mappings, or at least a default must be provided
+const hasAllModels = MODEL_MAPPINGS.haiku && MODEL_MAPPINGS.sonnet && MODEL_MAPPINGS.opus;
+const hasDefault = !!MODEL_MAPPINGS.default;
+
+if (!hasAllModels && !hasDefault) {
+  console.error("Error: Either provide --haiku, --sonnet, and --opus, or provide --default");
   showHelp();
 }
 
@@ -87,15 +96,20 @@ if (LOG_DIR && !existsSync(LOG_DIR)) {
   await mkdir(LOG_DIR, { recursive: true });
 }
 
+const modelLines = [
+  MODEL_MAPPINGS.haiku ? `│  Haiku →    ${MODEL_MAPPINGS.haiku.padEnd(28)}│` : "",
+  MODEL_MAPPINGS.sonnet ? `│  Sonnet →   ${MODEL_MAPPINGS.sonnet.padEnd(28)}│` : "",
+  MODEL_MAPPINGS.opus ? `│  Opus →     ${MODEL_MAPPINGS.opus.padEnd(28)}│` : "",
+  MODEL_MAPPINGS.default ? `│  Default →  ${MODEL_MAPPINGS.default.padEnd(28)}│` : "",
+].filter(Boolean).join("\n");
+
 console.log(`
 ┌─────────────────────────────────────────┐
 │  Anthropic → OpenAI Router             │
 ├─────────────────────────────────────────┤
 │  Port:      ${PORT.toString().padEnd(28)}│
 │  Endpoint:  ${ENDPOINT.padEnd(28)}│
-│  Haiku →    ${MODEL_MAPPINGS.haiku.padEnd(28)}│
-│  Sonnet →   ${MODEL_MAPPINGS.sonnet.padEnd(28)}│
-│  Opus →     ${MODEL_MAPPINGS.opus.padEnd(28)}│
+${modelLines}
 │  CORS:      ${CORS_ORIGIN.padEnd(28)}│
 │  Timeout:   ${(TIMEOUT_MS / 1000 + "s").padEnd(28)}│
 ${LOG_DIR ? `│  Log dir:   ${LOG_DIR.padEnd(28)}│` : "│  Logging:   disabled".padEnd(40) + "│"}
@@ -241,12 +255,17 @@ interface OpenAIRequest {
 function mapModel(anthropicModel: string): string {
   const lowerModel = anthropicModel.toLowerCase();
   
-  if (lowerModel.includes("haiku")) {
+  if (lowerModel.includes("haiku") && MODEL_MAPPINGS.haiku) {
     return MODEL_MAPPINGS.haiku;
-  } else if (lowerModel.includes("sonnet")) {
+  } else if (lowerModel.includes("sonnet") && MODEL_MAPPINGS.sonnet) {
     return MODEL_MAPPINGS.sonnet;
-  } else if (lowerModel.includes("opus")) {
+  } else if (lowerModel.includes("opus") && MODEL_MAPPINGS.opus) {
     return MODEL_MAPPINGS.opus;
+  }
+  
+  // Fall back to default if no specific match
+  if (MODEL_MAPPINGS.default) {
+    return MODEL_MAPPINGS.default;
   }
   
   return anthropicModel;
