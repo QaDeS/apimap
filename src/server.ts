@@ -6,7 +6,7 @@
 import type { Server, ServerWebSocket } from "bun";
 import { existsSync } from "fs";
 import { mkdir } from "fs/promises";
-import { join } from "path";
+import { join, dirname } from "path";
 
 import type { 
   RouterConfig, 
@@ -77,6 +77,7 @@ Options:
   --log-dir <path>       Override log directory from config
   --timeout <seconds>    Override timeout from config
   --gui-port <number>    Port for management GUI (default: 3001)
+  --no-gui               Disable management GUI
   --help                 Show this help message
 
 Examples:
@@ -87,7 +88,7 @@ Examples:
   bun run src/server.ts --config ./my-config.yaml --port 8080 --gui-port 8081
 
   # Disable GUI
-  bun run src/server.ts --gui-port 0
+  bun run src/server.ts --no-gui
 ╚════════════════════════════════════════════════════════════════╝
 `);
   process.exit(0);
@@ -901,7 +902,7 @@ async function main() {
   }
 
   const configPath = args.config || "config/config.yaml";
-  const guiPort = args["gui-port"] ? parseInt(args["gui-port"], 10) : 3001;
+  const guiPort = args["no-gui"] ? 0 : (args["gui-port"] ? parseInt(args["gui-port"], 10) : 3001);
 
   // Initialize state
   const configManager = new ConfigManager(configPath);
@@ -1045,22 +1046,88 @@ ${config.defaultProvider ? `║  Default: ${config.defaultProvider.padEnd(54)}�
 
   // Start GUI server if enabled
   if (guiPort > 0) {
-    console.log(`\nStarting GUI server on port ${guiPort}...`);
-    // The GUI will be served by the SvelteKit dev server or built files
-    // For now, we just reserve the port
+    const guiDir = join(dirname(import.meta.dir), "gui", "build");
+    if (existsSync(guiDir)) {
+      const guiServer = Bun.serve({
+        port: guiPort,
+        hostname: host,
+        idleTimeout: 30,
+
+        async fetch(req) {
+          const url = new URL(req.url);
+
+          // Proxy /api/admin requests to the API server
+          if (url.pathname.startsWith("/api/admin")) {
+            const apiUrl = `http://${host}:${apiPort}${url.pathname}${url.search}`;
+            try {
+              const proxyResp = await fetch(apiUrl, {
+                method: req.method,
+                headers: req.headers,
+                body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
+              });
+              return new Response(proxyResp.body, {
+                status: proxyResp.status,
+                headers: proxyResp.headers,
+              });
+            } catch (error) {
+              return new Response(JSON.stringify({ error: "API server unavailable" }), {
+                status: 502,
+                headers: { "Content-Type": "application/json" },
+              });
+            }
+          }
+
+          // Serve static files from gui/build
+          let filePath = join(guiDir, url.pathname);
+          let file = Bun.file(filePath);
+
+          // Try as-is first, then with index.html
+          if (!(await file.exists())) {
+            filePath = join(guiDir, url.pathname, "index.html");
+            file = Bun.file(filePath);
+          }
+
+          // SPA fallback to index.html
+          if (!(await file.exists())) {
+            file = Bun.file(join(guiDir, "index.html"));
+          }
+
+          return new Response(file);
+        },
+      });
+
+      console.log(`\nGUI server running at http://${host}:${guiPort}/`);
+
+      // Graceful shutdown (with GUI)
+      const shutdown = () => {
+        console.log("\nShutting down...");
+        guiServer.stop();
+        server.stop();
+        process.exit(0);
+      };
+      process.on("SIGINT", shutdown);
+      process.on("SIGTERM", shutdown);
+    } else {
+      console.log(`\nGUI build not found at ${guiDir}. Run 'cd gui && bun run build' to build the GUI.`);
+      // Graceful shutdown (no GUI)
+      const shutdown = () => {
+        console.log("\nShutting down...");
+        server.stop();
+        process.exit(0);
+      };
+      process.on("SIGINT", shutdown);
+      process.on("SIGTERM", shutdown);
+    }
+  } else {
+    // Graceful shutdown (GUI disabled)
+    const shutdown = () => {
+      console.log("\nShutting down...");
+      server.stop();
+      process.exit(0);
+    };
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
   }
-
-  // Graceful shutdown
-  process.on("SIGINT", () => {
-    console.log("\nShutting down...");
-    server.stop();
-    process.exit(0);
-  });
-
-  process.on("SIGTERM", () => {
-    server.stop();
-    process.exit(0);
-  });
 }
 
 main().catch(error => {
