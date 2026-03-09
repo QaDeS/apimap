@@ -111,12 +111,16 @@ export class LoggingManager extends EventEmitter {
 
     // Write to file if logging is enabled
     if (this.logDir) {
+      const now = new Date();
+      const dateStr = now.toISOString().replace(/[:T]/g, "-").slice(0, 19);
       const index = String(this.logIndex++).padStart(6, "0");
-      const filename = `${index}_${entry.provider}_${entry.model}_${entry.requestId}.json`;
+      const filename = `${dateStr}_${index}_${entry.provider}_${entry.model}_${entry.requestId}.json`;
       const filepath = join(this.logDir, filename);
 
       try {
         await writeFile(filepath, JSON.stringify(entry, null, 2));
+        // Emit event with filename for stdout logging
+        this.emit("logged", { entry, filename });
       } catch (err) {
         console.error("Failed to write log:", err);
       }
@@ -225,7 +229,10 @@ export class LoggingManager extends EventEmitter {
       for (const file of sortedFiles) {
         try {
           const content = await readFile(join(this.logDir, file), "utf-8");
-          logs.push(JSON.parse(content));
+          const entry = JSON.parse(content) as LogEntry;
+          // Attach filename to entry for reference
+          (entry as LogEntry & { filename: string }).filename = file;
+          logs.push(entry);
         } catch {
           // Skip malformed files
         }

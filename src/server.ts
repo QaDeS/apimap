@@ -65,31 +65,54 @@ function parseArgs(): Record<string, string> {
 }
 
 function showHelp(): void {
+  const HELP_WIDTH = 79;
+  const BL = "║", BR = "║";
+  const TL = "╔", TR = "╗";
+  const BLM = "╚", BRM = "╝";
+  const H = "═";
+  const T = "╠", TRG = "╣";
+  const INNER = HELP_WIDTH - 2;
+  
+  const line = (l: string, r = ""): string => {
+    const g = r ? " " : ""; 
+    const c = l + g + r;
+    const p = Math.max(0, INNER - c.length - 1);
+    return BL + l + " ".repeat(p) + g + r + " " + BR;
+  };
+  const center = (t: string): string => {
+    const p = Math.max(0, INNER - t.length);
+    const lp = Math.floor(p / 2);
+    return BL + " ".repeat(lp) + t + " ".repeat(p - lp) + BR;
+  };
+  const top = (): string => TL + H.repeat(INNER) + TR;
+  const sep = (): string => T + H.repeat(INNER) + TRG;
+  const bot = (): string => BLM + H.repeat(INNER) + BRM;
+  
   console.log(`
-╔════════════════════════════════════════════════════════════════╗
-║           Universal Model Router v2.0                          ║
-╠════════════════════════════════════════════════════════════════╣
-Usage: bun run src/server.ts [options]
-
-Options:
-  --config <path>        Path to YAML config (default: config/config.yaml)
-  --port <number>        Override port from config
-  --log-dir <path>       Override log directory from config
-  --timeout <seconds>    Override timeout from config
-  --gui-port <number>    Port for management GUI (default: 3001)
-  --no-gui               Disable management GUI
-  --help                 Show this help message
-
-Examples:
-  # Use default config
-  bun run src/server.ts
-
-  # Custom config and ports
-  bun run src/server.ts --config ./my-config.yaml --port 8080 --gui-port 8081
-
-  # Disable GUI
-  bun run src/server.ts --no-gui
-╚════════════════════════════════════════════════════════════════╝
+${top()}
+${center("Universal Model Router v2.0")}
+${sep()}
+${line("Usage: bun run src/server.ts [options]")}
+${line("")}
+${line("Options:")}
+${line("  --config <path>        Path to YAML config (default: config/config.yaml)")}
+${line("  --port <number>        Override port from config")}
+${line("  --log-dir <path>       Override log directory from config")}
+${line("  --timeout <seconds>    Override timeout from config")}
+${line("  --gui-port <number>    Port for management GUI (default: 3001)")}
+${line("  --no-gui               Disable management GUI")}
+${line("  --help                 Show this help message")}
+${line("")}
+${line("Examples:")}
+${line("  # Use default config")}
+${line("  bun run src/server.ts")}
+${line("")}
+${line("  # Custom config and ports")}
+${line("  bun run src/server.ts --config ./my-config.yaml --port 8080 --gui-port 8081")}
+${line("")}
+${line("  # Disable GUI")}
+${line("  bun run src/server.ts --no-gui")}
+${bot()}
 `);
   process.exit(0);
 }
@@ -528,7 +551,8 @@ async function createStreamingResponse(
       logEntry.durationMs = Date.now() - startTime;
       state.logging.log(logEntry).catch(console.error);
     } catch (error) {
-      console.error(`[stream] error:`, error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`[stream] error: ${errorMessage}`);
     } finally {
       reader.cancel().catch(() => {});
       await writer.close().catch(() => {});
@@ -968,35 +992,94 @@ async function main() {
     startTime: new Date(),
   };
 
+  // Listen for log events to print filename to stdout
+  loggingManager.on("logged", ({ filename }: { filename: string }) => {
+    console.log(`  → Log: ${filename}`);
+  });
+
   // Override port from CLI
   const apiPort = args.port ? parseInt(args.port, 10) : (config.server?.port || 3000);
   const host = config.server?.host || "0.0.0.0";
 
   // Print startup banner
+  const BOX_WIDTH = 79;
+  const BORDER_LEFT = "║";
+  const BORDER_RIGHT = "║";
+  const CORNER_TL = "╔";
+  const CORNER_TR = "╗";
+  const CORNER_BL = "╚";
+  const CORNER_BR = "╝";
+  const HORIZONTAL = "═";
+  const T_LEFT = "╠";
+  const T_RIGHT = "╣";
+  
+  // Inner content width (excluding borders)
+  const INNER_WIDTH = BOX_WIDTH - BORDER_LEFT.length - BORDER_RIGHT.length;
+  
+  function boxTop(): string {
+    return CORNER_TL + HORIZONTAL.repeat(INNER_WIDTH) + CORNER_TR;
+  }
+  
+  function boxSeparator(): string {
+    return T_LEFT + HORIZONTAL.repeat(INNER_WIDTH) + T_RIGHT;
+  }
+  
+  function boxBottom(): string {
+    return CORNER_BL + HORIZONTAL.repeat(INNER_WIDTH) + CORNER_BR;
+  }
+  
+  function boxLine(left: string, right: string = ""): string {
+    const gap = right ? " " : "";
+    const content = left + gap + right;
+    const paddingNeeded = INNER_WIDTH - content.length - 1; // -1 for trailing space
+    const padding = Math.max(0, paddingNeeded);
+    return BORDER_LEFT + left + " ".repeat(padding) + gap + right + " " + BORDER_RIGHT;
+  }
+  
+  function boxCenter(text: string): string {
+    const padding = Math.max(0, INNER_WIDTH - text.length);
+    const leftPad = Math.floor(padding / 2);
+    const rightPad = padding - leftPad;
+    return BORDER_LEFT + " ".repeat(leftPad) + text + " ".repeat(rightPad) + BORDER_RIGHT;
+  }
+  
+  const apiServerLine = `http://${host}:${apiPort}`;
+  const guiServerLine = guiPort > 0 ? `http://${host}:${guiPort}` : "Disabled";
+  const displayConfigPath = configManager.getConfigPath();
+  
+  const activeProviders = Object.entries(config.providers)
+    .filter(([id]) => router.getStats().providers.includes(id));
+  
+  const providerLines = activeProviders.length > 0
+    ? activeProviders.map(([id, p]) => {
+        const left = `  - ${id.padEnd(13)} → ${p.baseUrl.slice(0, 45)}`;
+        return boxLine(left);
+      })
+    : [boxLine("  (none)")];
+  
+  const routeLines = config.routes.length > 0
+    ? config.routes.map(r => {
+        const modelInfo = r.model || "(as-is)";
+        const left = `  ${r.pattern} → ${r.provider}:${modelInfo} (pri:${r.priority || 0})`;
+        return boxLine(left.slice(0, INNER_WIDTH));
+      })
+    : [boxLine("  (none)")];
+  
   console.log(`
-╔════════════════════════════════════════════════════════════════╗
-║           Universal Model Router v${state.version}                     ║
-╠════════════════════════════════════════════════════════════════╣
-║  API Server:  http://${host}:${apiPort.toString().padEnd(27)}║
-${guiPort > 0 ? `║  GUI Server:  http://${host}:${guiPort.toString().padEnd(27)}║` : "║  GUI:        Disabled".padEnd(65) + "║"}
-║  Config:     ${configManager.getConfigPath().padEnd(52)}║
-╠════════════════════════════════════════════════════════════════╣
-║  Active Providers:                                             ║
-${Object.entries(config.providers)
-  .filter(([id]) => router.getStats().providers.includes(id))
-  .map(([id, p]) => `║    - ${id.padEnd(15)} → ${p.baseUrl.slice(0, 32).padEnd(32)}║`)
-  .join("\n")}
-╠════════════════════════════════════════════════════════════════╣
-║  Routes (pattern → provider → target model):                  ║
-${config.routes
-  .map(r => {
-    const modelInfo = r.model || "(as-is)";
-    const line = `║    ${r.pattern} → ${r.provider}:${modelInfo} (pri:${r.priority || 0})`;
-    return line.slice(0, 64).padEnd(64) + "║";
-  })
-  .join("\n")}
-${config.defaultProvider ? `║  Default: ${config.defaultProvider.padEnd(54)}║` : "║  Default: (none)".padEnd(65) + "║"}
-╚════════════════════════════════════════════════════════════════╝
+${boxTop()}
+${boxCenter(`Universal Model Router v${state.version}`)}
+${boxSeparator()}
+${boxLine("  API Server: ", apiServerLine)}
+${guiPort > 0 ? boxLine("  GUI Server: ", guiServerLine) : boxLine("  GUI:        ", "Disabled")}
+${boxLine("  Config:     ", displayConfigPath)}
+${boxSeparator()}
+${boxLine("  Active Providers:")}
+${providerLines.join("\n")}
+${boxSeparator()}
+${boxLine("  Routes (pattern → provider → target model):")}
+${routeLines.join("\n")}
+${config.defaultProvider ? boxLine("  Default: ", config.defaultProvider) : boxLine("  Default: (none)")}
+${boxBottom()}
 `);
 
   // Print supported endpoints
