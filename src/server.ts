@@ -7,6 +7,7 @@ import type { Server, ServerWebSocket } from "bun";
 import { existsSync } from "fs";
 import { mkdir } from "fs/promises";
 import { join, dirname } from "path";
+import { hostname as getHostname } from "os";
 
 import type { 
   RouterConfig, 
@@ -100,6 +101,7 @@ ${line("  --port <number>        Override port from config")}
 ${line("  --log-dir <path>       Override log directory from config")}
 ${line("  --timeout <seconds>    Override timeout from config")}
 ${line("  --gui-port <number>    Port for management GUI (default: 3001)")}
+${line("  --hostname <name>      Hostname for URLs (default: actual hostname)")}
 ${line("  --no-gui               Disable management GUI")}
 ${line("  --help                 Show this help message")}
 ${line("")}
@@ -140,6 +142,15 @@ function getSchemePath(scheme: { id: string; path?: string; format: string }): s
 
 function generateRequestId(): string {
   return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 11)}`;
+}
+
+function getDisplayHostname(cliHostname?: string, configHostname?: string): string {
+  // Priority: CLI override > config > actual hostname > localhost
+  if (cliHostname) return cliHostname;
+  if (configHostname && configHostname !== "0.0.0.0") return configHostname;
+  const actualHostname = getHostname();
+  if (actualHostname && actualHostname !== "localhost") return actualHostname;
+  return "localhost";
 }
 
 function getCORSHeaders(requestOrigin: string | null, config: RouterConfig): Record<string, string> {
@@ -1000,6 +1011,7 @@ async function main() {
   // Override port from CLI
   const apiPort = args.port ? parseInt(args.port, 10) : (config.server?.port || 3000);
   const host = config.server?.host || "0.0.0.0";
+  const displayHost = getDisplayHostname(args.hostname, config.server?.host);
 
   // Print startup banner
   const BOX_WIDTH = 79;
@@ -1043,8 +1055,8 @@ async function main() {
     return BORDER_LEFT + " ".repeat(leftPad) + text + " ".repeat(rightPad) + BORDER_RIGHT;
   }
   
-  const apiServerLine = `http://${host}:${apiPort}`;
-  const guiServerLine = guiPort > 0 ? `http://${host}:${guiPort}` : "Disabled";
+  const apiServerLine = `http://${displayHost}:${apiPort}`;
+  const guiServerLine = guiPort > 0 ? `http://${displayHost}:${guiPort}` : "Disabled";
   const displayConfigPath = configManager.getConfigPath();
   
   const activeProviders = Object.entries(config.providers)
@@ -1085,9 +1097,9 @@ ${boxBottom()}
   // Print supported endpoints
   console.log("Supported endpoints:");
   config.schemes?.forEach(s => {
-    console.log(`  POST http://${host}:${apiPort}${getSchemePath(s)} (${s.format})`);
+    console.log(`  POST http://${displayHost}:${apiPort}${getSchemePath(s)} (${s.format})`);
   });
-  console.log(`\nHealth check: http://${host}:${apiPort}/health`);
+  console.log(`\nHealth check: http://${displayHost}:${apiPort}/health`);
 
   // Start API server
   server = Bun.serve({
@@ -1118,8 +1130,18 @@ ${boxBottom()}
         }, 200, config, requestOrigin);
       }
 
+      // Admin UI redirect (root path only)
+      if (url.pathname === "/api/admin" || url.pathname === "/api/admin/") {
+        return new Response(null, {
+          status: 302,
+          headers: {
+            "Location": `http://${displayHost}:${guiPort}/`,
+          },
+        });
+      }
+
       // Management API
-      if (url.pathname.startsWith("/api/admin")) {
+      if (url.pathname.startsWith("/api/admin/")) {
         return handleManagementAPI(req, url);
       }
 
@@ -1128,8 +1150,8 @@ ${boxBottom()}
     },
   });
 
-  console.log(`API server running at http://${host}:${apiPort}/`);
-  console.log(`Management API at http://${host}:${apiPort}/api/admin/`);
+  console.log(`API server running at http://${displayHost}:${apiPort}/`);
+  console.log(`Management API at http://${displayHost}:${apiPort}/api/admin/`);
 
   // Start GUI server if enabled
   if (guiPort > 0) {
@@ -1145,7 +1167,7 @@ ${boxBottom()}
 
           // Proxy /api/admin requests to the API server
           if (url.pathname.startsWith("/api/admin")) {
-            const apiUrl = `http://${host}:${apiPort}${url.pathname}${url.search}`;
+            const apiUrl = `http://127.0.0.1:${apiPort}${url.pathname}${url.search}`;
             try {
               const proxyResp = await fetch(apiUrl, {
                 method: req.method,
@@ -1183,7 +1205,7 @@ ${boxBottom()}
         },
       });
 
-      console.log(`\nGUI server running at http://${host}:${guiPort}/`);
+      console.log(`\nGUI server running at http://${displayHost}:${guiPort}/`);
 
       // Graceful shutdown (with GUI)
       const shutdown = () => {
