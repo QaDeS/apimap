@@ -116,6 +116,8 @@ export interface LogEntry {
   responseStatus: number;
   responseHeaders?: Record<string, string>;
   responseBody?: unknown;
+  rawUpstreamResponse?: unknown;
+  transformedResponse?: unknown;
   error?: string;
   durationMs: number;
   routed: boolean;

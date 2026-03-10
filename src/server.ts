@@ -484,6 +484,11 @@ async function handleRequest(
     const internalResp = transformers.parseResponse(targetFormat, responseData);
     const clientResp = transformers.toProviderResponse(scheme.format, internalResp);
 
+    // Store both raw upstream and transformed response when format conversion happened
+    if (scheme.format !== targetFormat) {
+      logEntry.rawUpstreamResponse = responseData;
+      logEntry.transformedResponse = clientResp;
+    }
     logEntry.responseBody = clientResp;
     logEntry.durationMs = Date.now() - startTime;
     await state.logging.log(logEntry);
@@ -576,15 +581,69 @@ async function handleAnthropicPassthrough(
     }
 
     logEntry.durationMs = Date.now() - startTime;
+
+    if (body.stream) {
+      // For streaming passthrough, tee the body to capture content for logging
+      const [logStream, clientStream] = response.body!.tee();
+
+      // Capture streamed content in background for logging
+      (async () => {
+        try {
+          const reader = logStream.getReader();
+          const decoder = new TextDecoder();
+          let fullContent = "";
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const text = decoder.decode(value, { stream: true });
+            // Extract text content from SSE events
+            for (const line of text.split("\n")) {
+              if (!line.startsWith("data: ")) continue;
+              try {
+                const event = JSON.parse(line.slice(6));
+                if (event.type === "content_block_delta" && event.delta?.text) {
+                  fullContent += event.delta.text;
+                }
+              } catch {}
+            }
+          }
+          logEntry.responseBody = fullContent || { type: "streaming_passthrough" };
+          state.logging.log(logEntry).catch(console.error);
+        } catch {
+          logEntry.responseBody = { type: "streaming_passthrough" };
+          state.logging.log(logEntry).catch(console.error);
+        }
+      })();
+
+      // Update tracking
+      updateRequest(requestId, { status: 'streaming' });
+
+      return new Response(clientStream, {
+        status: response.status,
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+          ...getCORSHeaders(req.headers.get("origin"), config),
+        },
+      });
+    }
+
+    // Non-streaming: read and log the response body
+    const responseData = await response.json();
+    logEntry.responseBody = responseData;
     await state.logging.log(logEntry);
 
-    return new Response(response.body, {
-      status: response.status,
-      headers: {
-        "Content-Type": body.stream ? "text/event-stream" : "application/json",
-        ...getCORSHeaders(req.headers.get("origin"), config),
-      },
+    // Update tracking
+    const responseContent = responseData?.content?.[0]?.text || '';
+    updateRequest(requestId, {
+      status: 'completed',
+      content: String(responseContent),
+      endTime: Date.now()
     });
+    cleanupOldRequests();
+
+    return jsonResponse(responseData, response.status, config, req.headers.get("origin"));
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1775,6 +1834,13 @@ ${boxBottom()}
         // Send current active requests to new client
         const requests = Array.from(activeRequests.values());
         ws.send(JSON.stringify({ type: 'initial', requests }));
+        // Send recent logs so the logs page isn't empty on connect
+        try {
+          const recentLogs = await state.logging.getRecentLogs(50);
+          ws.send(JSON.stringify({ type: 'initial_logs', logs: recentLogs }));
+        } catch (err) {
+          console.error("Failed to send initial logs:", err);
+        }
       },
       async close(ws) {
         wsClients.delete(ws);

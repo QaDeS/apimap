@@ -342,6 +342,19 @@ export function parseAnthropicResponse(data: AnthropicResponse): InternalRespons
 export function toAnthropicResponse(response: InternalResponse): AnthropicResponse {
   const content = response.content.map(internalContentToAnthropic);
 
+  // Append tool calls to content (Anthropic format requires tool_use blocks in the content array)
+  if (response.toolCalls) {
+    for (const tc of response.toolCalls) {
+      // Only add if not already in content (avoid duplicates)
+      const alreadyInContent = content.some(
+        (c) => c.type === "tool_use" && c.id === tc.toolCall?.id
+      );
+      if (!alreadyInContent) {
+        content.push(internalContentToAnthropic(tc));
+      }
+    }
+  }
+
   // Map stop reason back
   let stopReason: string | null = null;
   if (response.stopReason === "end_turn") stopReason = "end_turn";

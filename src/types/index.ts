@@ -292,6 +292,10 @@ export interface LogEntry {
   responseStatus: number;
   responseHeaders?: Record<string, string>;
   responseBody?: unknown;
+  /** Raw response from upstream provider (before transformation to client format) */
+  rawUpstreamResponse?: unknown;
+  /** Transformed response sent back to client (when different from responseBody) */
+  transformedResponse?: unknown;
   error?: string;
   durationMs: number;
   /** Whether this request was successfully routed */
