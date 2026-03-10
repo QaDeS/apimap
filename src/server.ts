@@ -1111,11 +1111,12 @@ async function handleUpdateDefaultProvider(req: Request, headers: Record<string,
 function handleGetServerInfo(headers: Record<string, string>): Response {
   const config = state.config.getConfig();
   const port = config.server?.port || 3000;
-  const host = config.server?.host || "localhost";
+  // Use the same logic as display hostname - prefer actual hostname over localhost
+  const host = getDisplayHostname(undefined, config.server?.host);
   const protocol = "http";
   
   return new Response(JSON.stringify({
-    apiUrl: `${protocol}://${host === "0.0.0.0" ? "localhost" : host}:${port}`,
+    apiUrl: `${protocol}://${host}:${port}`,
     version: state.version,
     uptime: Math.floor((Date.now() - state.startTime.getTime()) / 1000),
   }), { headers: { "Content-Type": "application/json", ...headers } });
