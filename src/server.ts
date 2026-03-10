@@ -69,6 +69,14 @@ function broadcastRequestUpdate(request: ActiveRequest) {
   }
 }
 
+// Broadcast log entry to all connected WebSocket clients
+function broadcastLogEntry(entry: LogEntry) {
+  const message = JSON.stringify({ type: 'log_entry', entry });
+  for (const ws of wsClients) {
+    ws.send(message);
+  }
+}
+
 // Add or update active request
 function trackRequest(request: ActiveRequest) {
   activeRequests.set(request.requestId, request);
@@ -1595,6 +1603,11 @@ async function main() {
   // Listen for log events to print filename to stdout
   loggingManager.on("logged", ({ filename }: { filename: string }) => {
     console.log(`  → Log: ${filename}`);
+  });
+  
+  // Listen for log events to broadcast to WebSocket clients
+  loggingManager.on("logged", ({ entry }: { entry: LogEntry }) => {
+    broadcastLogEntry(entry);
   });
 
   // Override port from CLI
