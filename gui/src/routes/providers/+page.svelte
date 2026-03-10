@@ -17,6 +17,11 @@
   import { providers, builtinProviders, isLoadingProviders } from '$lib/stores';
   import { providersApi } from '$lib/utils/api';
   import type { ProviderConfig } from '$lib/utils/api';
+  
+  // API URL is injected by GUI server
+  const API_URL = typeof window !== 'undefined' && (window as any).API_URL 
+    ? (window as any).API_URL 
+    : 'http://localhost:3000';
 
   let editingProviders: Record<string, ProviderConfig> = $state({});
   let showApiKeys: Record<string, boolean> = $state({});
@@ -47,7 +52,7 @@
     try {
       const [data, configData] = await Promise.all([
         providersApi.getAll(),
-        fetch('/api/admin/config').then(r => r.json())
+        fetch(`${API_URL}/admin/config`).then(r => r.json())
       ]);
       builtinProviders.set(data.builtin);
       providers.set(data.registered);
@@ -109,8 +114,8 @@
       await providersApi.update(editingProviders);
       
       // Save global timeout
-      const currentConfig = await fetch('/api/admin/config').then(r => r.json());
-      await fetch('/api/admin/config', {
+      const currentConfig = await fetch(`${API_URL}/admin/config`).then(r => r.json());
+      await fetch(`${API_URL}/admin/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

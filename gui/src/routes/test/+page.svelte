@@ -1,5 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  
+  // API URL is injected by GUI server
+  const API_URL = typeof window !== 'undefined' && (window as any).API_URL 
+    ? (window as any).API_URL 
+    : 'http://localhost:3000';
   import { 
     Beaker, 
     Send, 
@@ -68,7 +73,7 @@
 
   async function loadModels() {
     try {
-      const res = await fetch('/api/admin/routes');
+      const res = await fetch(`${API_URL}/admin/routes`);
       if (res.ok) {
         const data = await res.json();
         // Extract patterns from routes as model suggestions

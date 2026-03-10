@@ -1,6 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { AlertTriangle, CheckCircle, Activity, Clock, Server, Route, Zap, Plus, X, Eye } from '@lucide/svelte';
+  
+  // API URL is injected by GUI server
+  const API_URL = typeof window !== 'undefined' && (window as any).API_URL 
+    ? (window as any).API_URL 
+    : 'http://localhost:3000';
 
   // Simple local state
   let status = $state<any>(null);
@@ -10,11 +15,11 @@
 
   async function loadData() {
     try {
-      const res = await fetch('/api/admin/status');
+      const res = await fetch(`${API_URL}/admin/status`);
       if (!res.ok) throw new Error('Failed to load status');
       status = await res.json();
       
-      const unroutedRes = await fetch('/api/admin/unrouted');
+      const unroutedRes = await fetch(`${API_URL}/admin/unrouted`);
       if (unroutedRes.ok) {
         const data = await unroutedRes.json();
         unrouted = data.unrouted;
