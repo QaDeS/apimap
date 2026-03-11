@@ -22,14 +22,7 @@
   import { providersApi } from '$lib/utils/api';
   import type { ProviderConfig, ProviderInfo } from '$lib/utils/api';
 
-  // API URL
-  function resolveApiUrl(): string {
-    if (typeof window !== 'undefined') {
-      const injected = (window as any).API_URL;
-      if (injected && injected !== '{{API_URL}}') return injected;
-    }
-    return 'http://localhost:3000';
-  }
+  import { resolveApiUrl } from '$lib/utils/api';
   const API_URL = resolveApiUrl();
 
   // State
@@ -64,11 +57,16 @@
 
       // Build enabled providers list from config
       enabledProviders = [];
-      for (const [id, config] of Object.entries(configData.providers || {})) {
+      for (const [id, rawConfig] of Object.entries(configData.providers || {})) {
         const builtin = data.builtin.find((b: ProviderInfo) => b.id === id);
+        const config = (rawConfig || {}) as ProviderConfig;
+        // Ensure baseUrl is always set
+        if (!config.baseUrl && builtin?.defaultBaseUrl) {
+          config.baseUrl = builtin.defaultBaseUrl;
+        }
         enabledProviders.push({
           id,
-          config: config as ProviderConfig,
+          config,
           builtin,
         });
       }
@@ -110,8 +108,7 @@
   function removeProvider(id: string) {
     enabledProviders = enabledProviders.filter(p => p.id !== id);
     if (expandedProvider === id) expandedProvider = null;
-    // Save immediately when removing
-    saveAllProviders().then(() => hasUnsavedChanges = false);
+    hasUnsavedChanges = true;
   }
 
   function updateProviderConfig(id: string, updates: Partial<ProviderConfig>) {
