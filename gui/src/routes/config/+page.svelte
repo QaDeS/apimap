@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { 
-    Settings, 
+  import { beforeNavigate } from '$app/navigation';
+  import {
+    Settings,
     Save, 
     AlertCircle, 
     CheckCircle,
@@ -86,10 +87,25 @@
     }
   }
 
+  // Warn on unsaved changes
+  beforeNavigate(({ cancel }) => {
+    if (hasChanges && !confirm('You have unsaved configuration changes. Leave without saving?')) {
+      cancel();
+    }
+  });
+
+  function handleBeforeUnload(e: BeforeUnloadEvent) {
+    if (hasChanges) {
+      e.preventDefault();
+    }
+  }
+
   onMount(() => {
     loadConfig();
   });
 </script>
+
+<svelte:window onbeforeunload={handleBeforeUnload} />
 
 <svelte:head>
   <title>Configuration - API Map</title>

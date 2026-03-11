@@ -1,56 +1,56 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { 
-    Server, 
-    CheckCircle, 
-    XCircle, 
-    Cloud, 
-    Home, 
+  import { beforeNavigate } from '$app/navigation';
+  import {
+    Server,
+    CheckCircle,
+    XCircle,
+    Cloud,
+    Home,
     Plus,
     Trash2,
     Save,
     AlertCircle,
     Eye,
     EyeOff,
-    Key
+    Key,
+    ChevronDown,
+    ChevronUp,
+    GripVertical,
   } from '@lucide/svelte';
   import { providers, builtinProviders, isLoadingProviders } from '$lib/stores';
   import { providersApi } from '$lib/utils/api';
-  import type { ProviderConfig } from '$lib/utils/api';
-  
-  // API URL is injected by GUI server
-  const API_URL = typeof window !== 'undefined' && (window as any).API_URL 
-    ? (window as any).API_URL 
-    : 'http://localhost:3000';
+  import type { ProviderConfig, ProviderInfo } from '$lib/utils/api';
 
-  let editingProviders: Record<string, ProviderConfig> = $state({});
+  // API URL
+  function resolveApiUrl(): string {
+    if (typeof window !== 'undefined') {
+      const injected = (window as any).API_URL;
+      if (injected && injected !== '{{API_URL}}') return injected;
+    }
+    return 'http://localhost:3000';
+  }
+  const API_URL = resolveApiUrl();
+
+  // State
+  let enabledProviders: Array<{ id: string; config: ProviderConfig; builtin?: ProviderInfo }> = $state([]);
   let showApiKeys: Record<string, boolean> = $state({});
-  let hasChanges = $state(false);
+  let hasUnsavedChanges = $state(false);
   let saveError: string | null = $state(null);
   let saveSuccess = $state(false);
   let savingProvider: string | null = $state(null);
-  
-  // Global settings
-  let globalTimeout = $state(120);
-  let showTimeoutOverrides = $state<Record<string, boolean>>({});
-  
-  // Collapse/expand state - groups expanded if they have enabled providers
-  let expandedGroups = $state<Record<string, boolean>>({});
-  let expandedProviders = $state<Record<string, boolean>>({});
+  let expandedProvider: string | null = $state(null);
 
-  // Auth preset options
-  const authPresets = [
-    { label: 'Bearer Token (OpenAI-style)', header: 'Authorization', prefix: 'Bearer ' },
-    { label: 'API Key (Anthropic-style)', header: 'x-api-key', prefix: '' },
-    { label: 'Google API Key', header: 'x-goog-api-key', prefix: '' },
-    { label: 'Custom', header: '', prefix: '' },
-  ];
+  // Add provider state
+  let addProviderSelect = $state('');
 
-  const categories = [
-    { id: 'cloud', label: 'Cloud Providers', icon: Cloud, color: 'blue' },
-    { id: 'local', label: 'Local Providers', icon: Home, color: 'green' },
-    { id: 'custom', label: 'Custom Providers', icon: Server, color: 'purple' },
-  ];
+  // Available providers not yet added
+  let availableToAdd = $derived.by(() => {
+    const enabledIds = new Set(enabledProviders.map(p => p.id));
+    return $builtinProviders
+      .filter(p => !enabledIds.has(p.id))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  });
 
   async function loadProviders() {
     isLoadingProviders.set(true);
@@ -61,40 +61,16 @@
       ]);
       builtinProviders.set(data.builtin);
       providers.set(data.registered);
-      
-      // Load global timeout from config
-      globalTimeout = configData.server?.timeout || 120;
-      
-      // Initialize editing state for ALL builtin providers (not just enabled ones)
-      editingProviders = {};
-      showTimeoutOverrides = {};
-      expandedGroups = {};
-      expandedProviders = {};
-      
-      // Process all builtin providers
-      for (const provider of data.builtin) {
-        const savedConfig = configData.providers?.[provider.id] || {};
-        const hasApiKey = !!savedConfig.apiKey || !!savedConfig.apiKeyEnv || 
-          (!!provider.defaultApiKeyEnv && !!(window as any).ENV?.[provider.defaultApiKeyEnv]);
-        const isEnabled = !!savedConfig || hasApiKey;
-        
-        editingProviders[provider.id] = {
-          baseUrl: savedConfig.baseUrl || provider.defaultBaseUrl,
-          apiKeyEnv: savedConfig.apiKeyEnv || provider.defaultApiKeyEnv,
-          authHeader: savedConfig.authHeader || provider.authHeader,
-          authPrefix: savedConfig.authPrefix || provider.authPrefix,
-          supportsStreaming: savedConfig.supportsStreaming ?? provider.supportsStreaming,
-          timeout: savedConfig.timeout,
-          apiKey: savedConfig.apiKey || '',
-        };
-        // Show timeout field if provider has custom timeout
-        showTimeoutOverrides[provider.id] = !!savedConfig.timeout;
-        
-        // Expand enabled providers and their groups
-        if (isEnabled) {
-          expandedProviders[provider.id] = true;
-          expandedGroups[provider.category] = true;
-        }
+
+      // Build enabled providers list from config
+      enabledProviders = [];
+      for (const [id, config] of Object.entries(configData.providers || {})) {
+        const builtin = data.builtin.find((b: ProviderInfo) => b.id === id);
+        enabledProviders.push({
+          id,
+          config: config as ProviderConfig,
+          builtin,
+        });
       }
     } catch (err) {
       console.error('Failed to load providers:', err);
@@ -103,189 +79,103 @@
     }
   }
 
-  function updateProvider(id: string, updates: Partial<ProviderConfig>) {
-    editingProviders[id] = { ...editingProviders[id], ...updates };
-    hasChanges = true;
-    saveSuccess = false;
+  function generateInstanceId(baseId: string): string {
+    const existing = enabledProviders.filter(p => p.id === baseId || p.id.startsWith(`${baseId}-`));
+    if (existing.length === 0) return baseId;
+    // Find the next available number
+    let n = 2;
+    while (enabledProviders.some(p => p.id === `${baseId}-${n}`)) n++;
+    return `${baseId}-${n}`;
+  }
+
+  function addProvider() {
+    if (!addProviderSelect) return;
+
+    const builtin = $builtinProviders.find(b => b.id === addProviderSelect);
+    const id = generateInstanceId(addProviderSelect);
+
+    const config: ProviderConfig = {
+      baseUrl: builtin?.defaultBaseUrl || 'https://api.example.com/v1',
+      authHeader: builtin?.authHeader || 'Authorization',
+      authPrefix: builtin?.authPrefix || 'Bearer ',
+      supportsStreaming: builtin?.supportsStreaming ?? true,
+    };
+
+    enabledProviders = [...enabledProviders, { id, config, builtin: builtin || undefined }];
+    hasUnsavedChanges = true;
+    expandedProvider = id;
+    addProviderSelect = '';
   }
 
   function removeProvider(id: string) {
-    delete editingProviders[id];
-    hasChanges = true;
-    saveSuccess = false;
+    enabledProviders = enabledProviders.filter(p => p.id !== id);
+    if (expandedProvider === id) expandedProvider = null;
+    // Save immediately when removing
+    saveAllProviders().then(() => hasUnsavedChanges = false);
   }
 
-  function addCustomProvider() {
-    const id = `custom-${Date.now()}`;
-    editingProviders[id] = {
-      baseUrl: 'https://api.example.com/v1',
-      authHeader: 'Authorization',
-      authPrefix: 'Bearer ',
-      supportsStreaming: true,
-    };
-    hasChanges = true;
-    saveSuccess = false;
+  function updateProviderConfig(id: string, updates: Partial<ProviderConfig>) {
+    enabledProviders = enabledProviders.map(p =>
+      p.id === id ? { ...p, config: { ...p.config, ...updates } } : p
+    );
+    hasUnsavedChanges = true;
   }
 
-  function focusProvider(providerId: string) {
-    const builtin = $builtinProviders.find(p => p.id === providerId);
-    if (!builtin) return;
-    
-    // Auto-expand when focusing
-    expandedProviders[providerId] = true;
-    expandedGroups[builtin.category] = true;
-    
-    // Scroll to provider
-    setTimeout(() => {
-      document.getElementById(`provider-${providerId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 100);
-  }
-
-  async function saveSingleProvider(providerId: string) {
-    savingProvider = providerId;
+  async function saveSingleProvider(id: string) {
+    savingProvider = id;
     saveError = null;
     try {
-      const config = editingProviders[providerId];
-      const builtin = $builtinProviders.find(p => p.id === providerId);
-      
-      // Determine if we should save this provider
-      let providerToSave: Record<string, ProviderConfig> = {};
-      
-      if (!builtin) {
-        // Custom provider - always save
-        providerToSave[providerId] = { ...config };
-        if (!providerToSave[providerId].apiKey) {
-          delete providerToSave[providerId].apiKey;
-        }
-      } else {
-        // Builtin - only save if has API key or differs from defaults
-        const hasApiKey = config.apiKey || config.apiKeyEnv;
-        const differsFromDefaults = 
-          config.baseUrl !== builtin.defaultBaseUrl ||
-          config.authHeader !== builtin.authHeader ||
-          config.authPrefix !== builtin.authPrefix ||
-          config.supportsStreaming !== builtin.supportsStreaming ||
-          !!config.timeout;
-        
-        if (hasApiKey || differsFromDefaults) {
-          providerToSave[providerId] = { ...config };
-          if (!providerToSave[providerId].apiKey) {
-            delete providerToSave[providerId].apiKey;
-          }
-        } else {
-          // If no longer differs from defaults, remove from config
-          providerToSave[providerId] = {} as ProviderConfig;
-        }
-      }
-      
-      // Get current config and merge
-      const currentConfig = await fetch(`${API_URL}/admin/config`).then(r => r.json());
-      const updatedProviders = { ...currentConfig.providers };
-      
-      if (Object.keys(providerToSave[providerId]).length === 0) {
-        delete updatedProviders[providerId];
-      } else {
-        updatedProviders[providerId] = providerToSave[providerId];
-      }
-      
-      await providersApi.update(updatedProviders);
+      await saveAllProviders();
+      hasUnsavedChanges = false;
       saveSuccess = true;
       setTimeout(() => saveSuccess = false, 2000);
-      await loadProviders();
     } catch (err) {
-      saveError = err instanceof Error ? err.message : `Failed to save ${providerId}`;
+      saveError = err instanceof Error ? err.message : `Failed to save`;
     } finally {
       savingProvider = null;
     }
   }
 
-  async function saveProviders() {
-    saveError = null;
-    try {
-      // Filter providers to only save those with meaningful config
-      // Only include providers that differ from defaults or have an API key set
-      const providersToSave: Record<string, ProviderConfig> = {};
-      
-      for (const [id, config] of Object.entries(editingProviders)) {
-        const builtin = $builtinProviders.find(p => p.id === id);
-        
-        // Always save custom providers
-        if (!builtin) {
-          providersToSave[id] = { ...config };
-          // Remove empty apiKey
-          if (!providersToSave[id].apiKey) {
-            delete providersToSave[id].apiKey;
-          }
-          continue;
-        }
-        
-        // For builtin providers, only save if configured (has apiKey or differs from defaults)
-        const hasApiKey = config.apiKey || config.apiKeyEnv;
-        const differsFromDefaults = 
-          config.baseUrl !== builtin.defaultBaseUrl ||
-          config.authHeader !== builtin.authHeader ||
-          config.authPrefix !== builtin.authPrefix ||
-          config.supportsStreaming !== builtin.supportsStreaming ||
-          !!config.timeout;
-        
-        if (hasApiKey || differsFromDefaults) {
-          providersToSave[id] = { ...config };
-          // Remove empty apiKey
-          if (!providersToSave[id].apiKey) {
-            delete providersToSave[id].apiKey;
-          }
-        }
-      }
-      
-      // Save providers
-      await providersApi.update(providersToSave);
-      
-      // Save global timeout
-      const currentConfig = await fetch(`${API_URL}/admin/config`).then(r => r.json());
-      await fetch(`${API_URL}/admin/config`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...currentConfig,
-          server: {
-            ...currentConfig.server,
-            timeout: globalTimeout,
-          },
-        }),
-      });
-      
-      hasChanges = false;
-      saveSuccess = true;
-      setTimeout(() => saveSuccess = false, 3000);
-      await loadProviders();
-    } catch (err) {
-      saveError = err instanceof Error ? err.message : 'Failed to save providers';
+  async function saveAllProviders() {
+    const providersToSave: Record<string, ProviderConfig> = {};
+    for (const { id, config } of enabledProviders) {
+      const cleaned = { ...config };
+      if (!cleaned.apiKey) delete cleaned.apiKey;
+      providersToSave[id] = cleaned;
     }
+    await providersApi.update(providersToSave);
   }
 
-  function getCustomProviders() {
-    return Object.entries(editingProviders)
-      .filter(([id]) => !$builtinProviders.find(b => b.id === id))
-      .map(([id, config]) => ({ id, config }));
+  function getProviderIcon(provider: { builtin?: ProviderInfo }) {
+    if (!provider.builtin) return Server;
+    return provider.builtin.category === 'local' ? Home : Cloud;
   }
 
-  // Get the matching preset for current auth header/prefix
-  function getAuthPresetId(header: string, prefix: string): string {
-    const match = authPresets.find(p => 
-      p.header.toLowerCase() === (header || '').toLowerCase() && 
-      p.prefix === (prefix || '')
-    );
-    return match ? `${match.header}|${match.prefix}` : 'custom';
+  function getStatusColor(provider: { config: ProviderConfig; builtin?: ProviderInfo }): string {
+    if (!provider.builtin?.requiresApiKey) return 'green'; // Local providers
+    if (provider.config.apiKey) return 'green'; // Direct key set
+    if (provider.builtin?.defaultApiKeyEnv) return 'yellow'; // Might have env var
+    return 'red';
   }
 
-  // Apply auth preset selection
-  function applyAuthPreset(providerId: string, presetValue: string) {
-    if (presetValue === 'custom') return;
-    const [header, prefix] = presetValue.split('|');
-    updateProvider(providerId, { 
-      authHeader: header,
-      authPrefix: prefix
-    });
+  function getStatusText(provider: { config: ProviderConfig; builtin?: ProviderInfo }): string {
+    if (!provider.builtin?.requiresApiKey) return 'No key needed';
+    if (provider.config.apiKey) return 'API key set';
+    if (provider.builtin?.defaultApiKeyEnv) return `Uses ${provider.builtin.defaultApiKeyEnv}`;
+    return 'No API key';
+  }
+
+  // Warn on unsaved changes
+  beforeNavigate(({ cancel }) => {
+    if (hasUnsavedChanges && !confirm('You have unsaved provider changes. Leave without saving?')) {
+      cancel();
+    }
+  });
+
+  function handleBeforeUnload(e: BeforeUnloadEvent) {
+    if (hasUnsavedChanges) {
+      e.preventDefault();
+    }
   }
 
   onMount(() => {
@@ -293,26 +183,17 @@
   });
 </script>
 
+<svelte:window onbeforeunload={handleBeforeUnload} />
+
 <svelte:head>
   <title>Providers - API Map</title>
 </svelte:head>
 
 <div class="space-y-6">
   <!-- Header -->
-  <div class="flex items-center justify-between">
-    <div>
-      <h1 class="text-2xl font-bold text-gray-900">Providers</h1>
-      <p class="text-gray-600 mt-1">Configure upstream AI model providers</p>
-    </div>
-    <button
-      type="button"
-      onclick={saveProviders}
-      disabled={!hasChanges}
-      class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-    >
-      <Save size={18} />
-      Save Changes
-    </button>
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900">Providers</h1>
+    <p class="text-gray-600 mt-1">Manage upstream AI model providers</p>
   </div>
 
   {#if saveError}
@@ -325,535 +206,222 @@
   {#if saveSuccess}
     <div class="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-3 text-green-700">
       <CheckCircle size={20} />
-      Providers saved successfully!
+      Saved!
     </div>
   {/if}
 
   {#if $isLoadingProviders}
     <div class="text-center py-12 text-gray-500">Loading providers...</div>
   {:else}
-    <!-- Global Settings -->
-    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
-        <h2 class="text-lg font-semibold text-gray-900">Global Settings</h2>
-      </div>
-      <div class="p-6">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label for="global-timeout" class="block text-sm font-medium text-gray-700 mb-1">
-              Default Timeout (seconds)
-            </label>
-            <input
-              id="global-timeout"
-              type="number"
-              min="1"
-              max="600"
-              bind:value={globalTimeout}
-              oninput={() => hasChanges = true}
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-            />
-            <p class="text-xs text-gray-500 mt-1">
-              Default request timeout for all providers. Can be overridden per provider.
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Quick Navigation & Custom Provider -->
-    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
-        <h2 class="text-lg font-semibold text-gray-900">Quick Navigation</h2>
-      </div>
-      <div class="p-6">
-        <div class="flex gap-4 items-end">
-          <div class="flex-1">
-            <label for="nav-provider" class="block text-sm font-medium text-gray-700 mb-1">
-              Jump to provider
-            </label>
-            <select
-              id="nav-provider"
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-              onchange={(e) => {
-                const value = e.currentTarget.value;
-                if (value) {
-                  const provider = $builtinProviders.find(p => p.id === value);
-                  if (provider) {
-                    expandedGroups[provider.category] = true;
-                    expandedProviders[value] = true;
-                    // Scroll to provider
-                    setTimeout(() => {
-                      document.getElementById(`provider-${value}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }, 100);
-                  }
-                  e.currentTarget.value = '';
-                }
-              }}
-            >
-              <option value="">Select a provider...</option>
-              {#each $builtinProviders.sort((a, b) => a.name.localeCompare(b.name)) as provider}
-                <option value={provider.id}>{provider.name} - {provider.description.slice(0, 60)}...</option>
+    <!-- Add Provider -->
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <div class="flex gap-3 items-end">
+        <div class="flex-1">
+          <label for="add-provider" class="block text-sm font-medium text-gray-700 mb-1">
+            Add Provider
+          </label>
+          <select
+            id="add-provider"
+            bind:value={addProviderSelect}
+            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+          >
+            <option value="">Select a provider to add...</option>
+            <optgroup label="Cloud Providers">
+              {#each availableToAdd.filter(p => p.category === 'cloud') as provider}
+                <option value={provider.id}>{provider.name} - {provider.description}</option>
               {/each}
-            </select>
-          </div>
-          <button
-            type="button"
-            onclick={addCustomProvider}
-            class="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white font-medium rounded-lg hover:bg-purple-700 transition-colors"
-          >
-            <Plus size={18} />
-            Custom Provider
-          </button>
+            </optgroup>
+            <optgroup label="Local Providers">
+              {#each availableToAdd.filter(p => p.category === 'local') as provider}
+                <option value={provider.id}>{provider.name} - {provider.description}</option>
+              {/each}
+            </optgroup>
+            <optgroup label="Enterprise">
+              {#each availableToAdd.filter(p => p.category === 'enterprise' || p.category === 'regional') as provider}
+                <option value={provider.id}>{provider.name} - {provider.description}</option>
+              {/each}
+            </optgroup>
+          </select>
         </div>
+        <button
+          type="button"
+          onclick={addProvider}
+          disabled={!addProviderSelect}
+          class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          <Plus size={18} />
+          Add
+        </button>
       </div>
+      <p class="text-xs text-gray-500 mt-2">
+        You can add the same provider multiple times with different API keys or endpoints.
+      </p>
     </div>
 
-    <!-- Provider Categories - Show all providers, sorted, collapsible -->
-    {#each categories as category}
-      {@const categoryProviders = $builtinProviders
-        .filter(p => p.category === category.id)
-        .sort((a, b) => a.name.localeCompare(b.name))}
-      {#if categoryProviders.length > 0}
-        <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <!-- Collapsible Group Header -->
-          <button
-            type="button"
-            class="w-full px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between hover:bg-gray-100 transition-colors"
-            onclick={() => expandedGroups[category.id] = !expandedGroups[category.id]}
-          >
-            <div class="flex items-center gap-3">
-              <category.icon class="text-{category.color}-600" size={24} />
-              <h2 class="text-lg font-semibold text-gray-900">{category.label}</h2>
-              <span class="text-sm text-gray-500">({categoryProviders.filter(p => p.enabled).length} enabled)</span>
-            </div>
-            <svg 
-              class="w-5 h-5 text-gray-500 transition-transform {expandedGroups[category.id] ? 'rotate-180' : ''}" 
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
+    <!-- Enabled Providers List -->
+    {#if enabledProviders.length === 0}
+      <div class="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">
+        <Server class="mx-auto mb-4 text-gray-300" size={48} />
+        <p class="text-lg font-medium text-gray-700">No providers configured</p>
+        <p class="mt-1">Add a provider above to get started.</p>
+      </div>
+    {:else}
+      <div class="space-y-3">
+        {#each enabledProviders as provider (provider.id)}
+          {@const isExpanded = expandedProvider === provider.id}
+          {@const IconComponent = getProviderIcon(provider)}
+          {@const statusColor = getStatusColor(provider)}
+          {@const statusText = getStatusText(provider)}
 
-          {#if expandedGroups[category.id]}
-            <div class="divide-y divide-gray-200">
-              {#each categoryProviders as provider}
-                {@const editing = editingProviders[provider.id] || {}}
-                {@const hasApiKey = !!editing.apiKey || !!editing.apiKeyEnv}
-                {@const isFullyConfigured = !provider.requiresApiKey || hasApiKey}
-                {@const isEnabled = provider.enabled}
-                {@const currentPreset = getAuthPresetId(editing.authHeader || provider.authHeader, editing.authPrefix || provider.authPrefix)}
-                {@const isExpanded = expandedProviders[provider.id]}
-                
-                <div class="{isEnabled ? 'bg-blue-50/30' : ''}" id="provider-{provider.id}">
-                  <!-- Provider Header (always visible) -->
-                  <button
-                    type="button"
-                    class="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
-                    onclick={() => expandedProviders[provider.id] = !isExpanded}
-                  >
-                    <div class="flex items-center gap-3">
-                      <div class="w-10 h-10 rounded-lg bg-{category.color}-100 flex items-center justify-center">
-                        <Server class="text-{category.color}-600" size={20} />
-                      </div>
-                      <div class="text-left">
-                        <h3 class="font-semibold text-gray-900 flex items-center gap-2">
-                          {provider.name}
-                          {#if isEnabled && isFullyConfigured}
-                            <CheckCircle class="text-green-500" size={16} />
-                          {:else if isEnabled}
-                            <AlertCircle class="text-amber-500" size={16} />
-                          {/if}
-                        </h3>
-                        <p class="text-sm text-gray-600">{provider.description}</p>
-                      </div>
-                    </div>
-                    <div class="flex items-center gap-3">
-                      {#if isEnabled}
-                        <span class="px-3 py-1 rounded-full text-xs font-medium {isFullyConfigured ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}">
-                          {isFullyConfigured ? 'Ready' : 'API Key Required'}
-                        </span>
-                      {:else}
-                        <span class="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                          Not Configured
-                        </span>
+          <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <!-- Provider Row -->
+            <button
+              type="button"
+              class="w-full px-5 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+              onclick={() => expandedProvider = isExpanded ? null : provider.id}
+            >
+              <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg {statusColor === 'green' ? 'bg-green-100' : statusColor === 'yellow' ? 'bg-yellow-100' : 'bg-gray-100'} flex items-center justify-center">
+                  <IconComponent class="{statusColor === 'green' ? 'text-green-600' : statusColor === 'yellow' ? 'text-yellow-600' : 'text-gray-400'}" size={18} />
+                </div>
+                <div class="text-left">
+                  <h3 class="font-semibold text-gray-900 text-sm">{provider.id}</h3>
+                  <p class="text-xs text-gray-500">
+                    {provider.builtin?.description || 'Custom provider'} &middot;
+                    <span class="{statusColor === 'green' ? 'text-green-600' : statusColor === 'yellow' ? 'text-yellow-600' : 'text-red-500'}">{statusText}</span>
+                  </p>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                {#if isExpanded}
+                  <ChevronUp size={18} class="text-gray-400" />
+                {:else}
+                  <ChevronDown size={18} class="text-gray-400" />
+                {/if}
+              </div>
+            </button>
+
+            <!-- Expanded Configuration -->
+            {#if isExpanded}
+              <div class="px-5 pb-5 border-t border-gray-100 pt-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <!-- Base URL -->
+                  <div>
+                    <label for="{provider.id}-baseUrl" class="block text-xs font-medium text-gray-600 mb-1">
+                      Base URL
+                    </label>
+                    <input
+                      id="{provider.id}-baseUrl"
+                      type="text"
+                      value={provider.config.baseUrl}
+                      oninput={(e) => updateProviderConfig(provider.id, { baseUrl: e.currentTarget.value })}
+                      class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                    />
+                  </div>
+
+                  <!-- API Key -->
+                  <div>
+                    <label for="{provider.id}-apiKey" class="block text-xs font-medium text-gray-600 mb-1">
+                      API Key
+                      {#if provider.builtin?.defaultApiKeyEnv}
+                        <span class="text-gray-400 font-normal">({provider.builtin.defaultApiKeyEnv})</span>
                       {/if}
-                      <svg 
-                        class="w-5 h-5 text-gray-400 transition-transform {isExpanded ? 'rotate-180' : ''}" 
-                        fill="none" 
-                        stroke="currentColor" 
-                        viewBox="0 0 24 24"
+                    </label>
+                    <div class="relative">
+                      <input
+                        id="{provider.id}-apiKey"
+                        type={showApiKeys[provider.id] ? 'text' : 'password'}
+                        value={provider.config.apiKey || ''}
+                        placeholder={provider.builtin?.requiresApiKey ? 'Required' : 'Optional'}
+                        oninput={(e) => updateProviderConfig(provider.id, { apiKey: e.currentTarget.value })}
+                        class="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                      />
+                      <button
+                        type="button"
+                        onclick={() => showApiKeys[provider.id] = !showApiKeys[provider.id]}
+                        class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                       >
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </div>
-                  </button>
-
-                  <!-- Provider Details (expandable) -->
-                  {#if isExpanded}
-                    <div class="px-6 pb-6">
-                      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <!-- Base URL -->
-                        <div>
-                          <label for="{provider.id}-baseUrl" class="block text-sm font-medium text-gray-700 mb-1">
-                            Base URL
-                            <span class="text-red-500">*</span>
-                          </label>
-                          <input
-                            id="{provider.id}-baseUrl"
-                            type="text"
-                            value={editing.baseUrl || provider.defaultBaseUrl}
-                            oninput={(e) => updateProvider(provider.id, { baseUrl: e.currentTarget.value })}
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                          />
-                        </div>
-
-                        <!-- API Key -->
-                        <div>
-                          <label for="{provider.id}-apiKey" class="block text-sm font-medium text-gray-700 mb-1">
-                            <span class="flex items-center gap-1">
-                              <Key size={14} />
-                              API Key
-                            </span>
-                          </label>
-                          <div class="relative">
-                            <input
-                              id="{provider.id}-apiKey"
-                              type={showApiKeys[provider.id] ? 'text' : 'password'}
-                              value={editing.apiKey || ''}
-                              placeholder={provider.requiresApiKey ? 'Required' : 'Optional'}
-                              oninput={(e) => updateProvider(provider.id, { apiKey: e.currentTarget.value })}
-                              class="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                            />
-                            <button
-                              type="button"
-                              onclick={() => showApiKeys[provider.id] = !showApiKeys[provider.id]}
-                              class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                              aria-label={showApiKeys[provider.id] ? 'Hide API key' : 'Show API key'}
-                            >
-                              {#if showApiKeys[provider.id]}
-                                <EyeOff size={16} />
-                              {:else}
-                                <Eye size={16} />
-                              {/if}
-                            </button>
-                          </div>
-                        </div>
-
-                        <!-- Environment Variable -->
-                        <div>
-                          <label for="{provider.id}-apiKeyEnv" class="block text-sm font-medium text-gray-700 mb-1">
-                            Environment Variable
-                          </label>
-                          <input
-                            id="{provider.id}-apiKeyEnv"
-                            type="text"
-                            value={editing.apiKeyEnv || provider.defaultApiKeyEnv || ''}
-                            placeholder={provider.defaultApiKeyEnv || 'e.g., MY_API_KEY'}
-                            oninput={(e) => updateProvider(provider.id, { apiKeyEnv: e.currentTarget.value })}
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                          />
-                        </div>
-
-                        <!-- Auth Type -->
-                        <div>
-                          <label for="{provider.id}-authType" class="block text-sm font-medium text-gray-700 mb-1">
-                            Authentication Type
-                          </label>
-                          <input
-                            id="{provider.id}-authType"
-                            type="text"
-                            list="auth-presets"
-                            value={currentPreset === 'custom' ? `${editing.authHeader || provider.authHeader}|${editing.authPrefix || provider.authPrefix}` : currentPreset}
-                            oninput={(e) => applyAuthPreset(provider.id, e.currentTarget.value)}
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                          />
-                          <datalist id="auth-presets">
-                            {#each authPresets as preset}
-                              {#if preset.label !== 'Custom'}
-                                <option value="{preset.header}|{preset.prefix}">{preset.label}</option>
-                              {/if}
-                            {/each}
-                          </datalist>
-                          <p class="text-xs text-gray-500 mt-1">
-                            Header: <code>{editing.authHeader || provider.authHeader}</code>
-                          </p>
-                        </div>
-
-                        <!-- Timeout Override -->
-                        <div>
-                          <label class="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
-                            <input
-                              type="checkbox"
-                              checked={showTimeoutOverrides[provider.id]}
-                              onchange={(e) => {
-                                showTimeoutOverrides[provider.id] = e.currentTarget.checked;
-                                if (!e.currentTarget.checked) {
-                                  updateProvider(provider.id, { timeout: undefined });
-                                }
-                                hasChanges = true;
-                              }}
-                              class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                            />
-                            Custom Timeout
-                          </label>
-                          {#if showTimeoutOverrides[provider.id]}
-                            <input
-                              type="number"
-                              min="1"
-                              max="600"
-                              value={editing.timeout || globalTimeout}
-                              oninput={(e) => updateProvider(provider.id, { timeout: parseInt(e.currentTarget.value) })}
-                              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                            />
-                          {/if}
-                        </div>
-                      </div>
-
-                      <!-- Streaming Support & Actions -->
-                      <div class="mt-4 flex items-center justify-between">
-                        <div class="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            id="{provider.id}-streaming"
-                            checked={editing.supportsStreaming !== false}
-                            onchange={(e) => updateProvider(provider.id, { supportsStreaming: e.currentTarget.checked })}
-                            class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                          />
-                          <label for="{provider.id}-streaming" class="text-sm text-gray-700">
-                            Supports streaming
-                          </label>
-                        </div>
-                        
-                        <div class="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onclick={() => saveSingleProvider(provider.id)}
-                            disabled={savingProvider === provider.id}
-                            class="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                          >
-                            {#if savingProvider === provider.id}
-                              <span class="animate-spin">⟳</span>
-                            {:else}
-                              <Save size={16} />
-                            {/if}
-                            Save
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  {/if}
-                </div>
-              {/each}
-            </div>
-          {/if}
-        </div>
-      {/if}
-    {/each}
-
-    <!-- Custom Providers -->
-    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div class="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <Server class="text-purple-600" size={24} />
-          <h2 class="text-lg font-semibold text-gray-900">Custom Providers</h2>
-          <span class="text-sm text-gray-500">({getCustomProviders().length})</span>
-        </div>
-      </div>
-
-      {#if getCustomProviders().length === 0}
-        <div class="p-8 text-center text-gray-500">
-          No custom providers configured
-        </div>
-      {:else}
-        <div class="divide-y divide-gray-200">
-          {#each getCustomProviders().sort((a, b) => a.id.localeCompare(b.id)) as { id, config: customConfig }}
-            {@const currentPreset = getAuthPresetId(customConfig.authHeader, customConfig.authPrefix)}
-            {@const isExpanded = expandedProviders[id]}
-            <div>
-              <!-- Provider Header -->
-              <button
-                type="button"
-                class="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
-                onclick={() => expandedProviders[id] = !isExpanded}
-              >
-                <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
-                    <Server class="text-purple-600" size={20} />
-                  </div>
-                  <div class="text-left">
-                    <h3 class="font-semibold text-gray-900">{id}</h3>
-                    <p class="text-sm text-gray-600">Custom provider</p>
-                  </div>
-                </div>
-                <div class="flex items-center gap-3">
-                  <span class="px-3 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
-                    Custom
-                  </span>
-                  <svg 
-                    class="w-5 h-5 text-gray-400 transition-transform {isExpanded ? 'rotate-180' : ''}" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    viewBox="0 0 24 24"
-                  >
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                  </svg>
-                </div>
-              </button>
-
-              {#if isExpanded}
-                <div class="px-6 pb-6">
-                  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <div>
-                      <label for="{id}-baseUrl" class="block text-sm font-medium text-gray-700 mb-1">
-                        Base URL <span class="text-red-500">*</span>
-                      </label>
-                      <input
-                        id="{id}-baseUrl"
-                        type="text"
-                        value={customConfig.baseUrl}
-                        oninput={(e) => updateProvider(id, { baseUrl: e.currentTarget.value })}
-                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                      />
-                    </div>
-
-                    <div>
-                      <label for="{id}-apiKey" class="block text-sm font-medium text-gray-700 mb-1">
-                        API Key (optional)
-                      </label>
-                      <input
-                        id="{id}-apiKey"
-                        type="password"
-                        value={customConfig.apiKey || ''}
-                        placeholder="Optional"
-                        oninput={(e) => updateProvider(id, { apiKey: e.currentTarget.value })}
-                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                      />
-                    </div>
-
-                    <!-- Auth Type -->
-                    <div>
-                      <label for="{id}-authType" class="block text-sm font-medium text-gray-700 mb-1">
-                        Authentication Type
-                      </label>
-                      <input
-                        id="{id}-authType"
-                        type="text"
-                        list="auth-presets-custom"
-                        value={currentPreset === 'custom' ? `${customConfig.authHeader || 'Authorization'}|${customConfig.authPrefix || 'Bearer '}` : currentPreset}
-                        oninput={(e) => applyAuthPreset(id, e.currentTarget.value)}
-                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                      />
-                      <datalist id="auth-presets-custom">
-                        {#each authPresets as preset}
-                          {#if preset.label !== 'Custom'}
-                            <option value="{preset.header}|{preset.prefix}">{preset.label}</option>
-                          {/if}
-                        {/each}
-                      </datalist>
-                    </div>
-
-                    <!-- Timeout Override -->
-                    <div>
-                      <label class="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
-                        <input
-                          type="checkbox"
-                          checked={showTimeoutOverrides[id]}
-                          onchange={(e) => {
-                            showTimeoutOverrides[id] = e.currentTarget.checked;
-                            if (!e.currentTarget.checked) {
-                              updateProvider(id, { timeout: undefined });
-                            }
-                            hasChanges = true;
-                          }}
-                          class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                        />
-                        Custom Timeout
-                      </label>
-                      {#if showTimeoutOverrides[id]}
-                        <input
-                          type="number"
-                          min="1"
-                          max="600"
-                          value={customConfig.timeout || globalTimeout}
-                          oninput={(e) => updateProvider(id, { timeout: parseInt(e.currentTarget.value) })}
-                          class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                        />
-                      {/if}
+                        {#if showApiKeys[provider.id]}
+                          <EyeOff size={16} />
+                        {:else}
+                          <Eye size={16} />
+                        {/if}
+                      </button>
                     </div>
                   </div>
 
-                  <!-- Streaming Support & Actions -->
-                  <div class="mt-4 flex items-center justify-between">
-                    <div class="flex items-center gap-2">
+                  <!-- Timeout -->
+                  <div>
+                    <label for="{provider.id}-timeout" class="block text-xs font-medium text-gray-600 mb-1">
+                      Timeout (seconds)
+                    </label>
+                    <input
+                      id="{provider.id}-timeout"
+                      type="number"
+                      min="1"
+                      max="600"
+                      value={provider.config.timeout || ''}
+                      placeholder="Default (120)"
+                      oninput={(e) => updateProviderConfig(provider.id, { timeout: e.currentTarget.value ? parseInt(e.currentTarget.value) : undefined })}
+                      class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                    />
+                  </div>
+
+                  <!-- Streaming -->
+                  <div class="flex items-center pt-5">
+                    <label class="flex items-center gap-2 text-sm text-gray-700">
                       <input
                         type="checkbox"
-                        id="{id}-streaming"
-                        checked={customConfig.supportsStreaming !== false}
-                        onchange={(e) => updateProvider(id, { supportsStreaming: e.currentTarget.checked })}
+                        checked={provider.config.supportsStreaming !== false}
+                        onchange={(e) => updateProviderConfig(provider.id, { supportsStreaming: e.currentTarget.checked })}
                         class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                       />
-                      <label for="{id}-streaming" class="text-sm text-gray-700">
-                        Supports streaming
-                      </label>
-                    </div>
-                    
-                    <div class="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onclick={() => removeProvider(id)}
-                        class="flex items-center gap-2 px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm"
-                      >
-                        <Trash2 size={16} />
-                        Remove
-                      </button>
-                      <button
-                        type="button"
-                        onclick={() => saveSingleProvider(id)}
-                        disabled={savingProvider === id}
-                        class="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                      >
-                        {#if savingProvider === id}
-                          <span class="animate-spin">⟳</span>
-                        {:else}
-                          <Save size={16} />
-                        {/if}
-                        Save
-                      </button>
-                    </div>
+                      Supports streaming
+                    </label>
                   </div>
                 </div>
-              {/if}
-            </div>
-          {/each}
-        </div>
-      {/if}
-    </div>
 
-    <!-- Help Section -->
-    <div class="bg-blue-50 rounded-xl border border-blue-200 p-6">
+                <!-- Actions -->
+                <div class="mt-4 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onclick={() => removeProvider(provider.id)}
+                    class="flex items-center gap-2 px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm"
+                  >
+                    <Trash2 size={16} />
+                    Remove
+                  </button>
+                  <button
+                    type="button"
+                    onclick={() => saveSingleProvider(provider.id)}
+                    disabled={savingProvider === provider.id}
+                    class="flex items-center gap-2 px-4 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  >
+                    {#if savingProvider === provider.id}
+                      <span class="animate-spin">&#x27F3;</span>
+                    {:else}
+                      <Save size={16} />
+                    {/if}
+                    Save
+                  </button>
+                </div>
+              </div>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    {/if}
+
+    <!-- Help -->
+    <div class="bg-blue-50 rounded-xl border border-blue-200 p-5">
       <h3 class="font-semibold text-blue-900 mb-2 flex items-center gap-2">
-        <AlertCircle size={20} />
-        About Provider Configuration
+        <AlertCircle size={18} />
+        Tips
       </h3>
-      <div class="text-sm text-blue-800 space-y-2">
-        <p>
-          <strong>API Key Priority:</strong> If you enter an API key directly, it will be used. 
-          Otherwise, the system will look for the environment variable specified.
-        </p>
-        <p>
-          <strong>Security:</strong> API keys entered here are stored in the config file. 
-          For better security, use environment variables (e.g., <code>OPENAI_API_KEY</code>).
-        </p>
-        <p>
-          <strong>Local Providers:</strong> Ollama, LM Studio, and llama.cpp typically don't require API keys 
-          as they run locally on your machine, but you can still configure one if needed.
-        </p>
-        <p>
-          <strong>Authentication Types:</strong> Choose from presets like Bearer Token (OpenAI-style), 
-          API Key (Anthropic-style), or enter a custom header/prefix combination.
-        </p>
+      <div class="text-sm text-blue-800 space-y-1">
+        <p><strong>Multiple instances:</strong> Add the same provider type multiple times with different API keys or endpoints (e.g., two OpenAI accounts).</p>
+        <p><strong>Local providers:</strong> Ollama, LM Studio, etc. are auto-detected on first start and don't need API keys.</p>
+        <p><strong>Environment variables:</strong> If an API key env var (e.g., OPENAI_API_KEY) is set, the provider will use it automatically.</p>
       </div>
     </div>
   {/if}

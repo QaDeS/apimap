@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { beforeNavigate } from '$app/navigation';
   import { page } from '$app/stores';
   import { 
     Route, 
@@ -58,8 +59,8 @@
         providersApi.getAll(),
       ]);
       
-      // Sort routes by priority (highest first) when loading
-      editingRoutes = [...routesData.routes].sort((a, b) => (b.priority || 0) - (a.priority || 0));
+      // Routes are in top-down order (first match wins)
+      editingRoutes = [...routesData.routes];
       // Only show enabled providers in dropdown
       providers.set(providersData.registered.filter((p: ProviderInfo & { enabled?: boolean }) => p.enabled));
       
@@ -112,13 +113,18 @@
   function addRoute() {
     if (!newPattern.trim() || !newProvider) return;
     
-    // Add new route at the end (lowest priority)
-    editingRoutes.push({
+    // Add new route before catch-all "*" if present, else at end
+    const newRoute: RouteConfig = {
       pattern: newPattern.trim(),
       provider: newProvider,
       model: newModel || undefined,
-      priority: 0, // Will be calculated on save
-    });
+    };
+    const lastRoute = editingRoutes[editingRoutes.length - 1];
+    if (lastRoute && lastRoute.pattern === '*') {
+      editingRoutes.splice(editingRoutes.length - 1, 0, newRoute);
+    } else {
+      editingRoutes.push(newRoute);
+    }
     
     editingRoutes = editingRoutes;
     hasChanges = true;
@@ -175,26 +181,12 @@
     saveSuccess = false;
   }
 
-  // Calculate priorities based on array order (first = highest priority)
-  function calculatePriorities(): RouteConfig[] {
-    const count = editingRoutes.length;
-    if (count === 0) return [];
-    
-    // Distribute priorities evenly from 100 down to 1
-    return editingRoutes.map((route, index) => ({
-      ...route,
-      priority: Math.max(1, Math.round(100 - (index * (99 / (count - 1 || 1))))),
-    }));
-  }
-
   async function saveRoutes() {
     saveError = null;
     try {
-      // Calculate priorities before saving
-      const routesToSave = calculatePriorities();
-      await routesApi.update(routesToSave);
-      routes.set(routesToSave);
-      editingRoutes = routesToSave;
+      // Save routes in current order (top-down matching)
+      await routesApi.update(editingRoutes);
+      routes.set(editingRoutes);
       hasChanges = false;
       saveSuccess = true;
       setTimeout(() => saveSuccess = false, 3000);
@@ -303,10 +295,25 @@
     isAdding = true;
   }
 
+  // Warn on unsaved changes
+  beforeNavigate(({ cancel }) => {
+    if (hasChanges && !confirm('You have unsaved route changes. Leave without saving?')) {
+      cancel();
+    }
+  });
+
+  function handleBeforeUnload(e: BeforeUnloadEvent) {
+    if (hasChanges) {
+      e.preventDefault();
+    }
+  }
+
   onMount(() => {
     loadData();
   });
 </script>
+
+<svelte:window onbeforeunload={handleBeforeUnload} />
 
 <svelte:head>
   <title>Routes - API Map</title>
@@ -363,7 +370,7 @@
       <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
         <h2 class="text-lg font-semibold text-gray-900">Routing Rules</h2>
         <p class="text-sm text-gray-600 mt-1">
-          Drag to reorder (top = highest priority). First matching route wins.
+          Routes are matched top-down. Drag to reorder. First match wins. Put catch-all "*" last.
         </p>
       </div>
 
