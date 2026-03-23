@@ -17,7 +17,8 @@ FROM base AS deps
 COPY package.json bun.lock ./
 COPY gui/package.json gui/bun.lock ./gui/
 
-RUN bun install --frozen-lockfile
+RUN bun install --frozen-lockfile && \
+    cd gui && bun install --frozen-lockfile && cd ..
 
 # ============================================================
 # Build
