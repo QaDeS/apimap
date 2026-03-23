@@ -13,7 +13,7 @@ export class GoogleProvider extends BaseProvider {
   /**
    * Google uses models/{model} path format
    */
-  getEndpointUrl(format: string): string {
+  override getEndpointUrl(format: string): string {
     const baseUrl = this.config.baseUrl;
     
     // Extract model from format or use generic endpoint
@@ -29,7 +29,7 @@ export class GoogleProvider extends BaseProvider {
   /**
    * Get models URL for Google
    */
-  getModelsUrl(): string | null {
+  override getModelsUrl(): string | null {
     return `${this.config.baseUrl}/models`;
   }
 

@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { ConfigManager } from "./manager.ts";
 import { existsSync } from "fs";
-import { mkdir, writeFile, rmdir, unlink } from "fs/promises";
+import { mkdir, writeFile, rm, unlink } from "fs/promises";
 import { join } from "path";
 import type { RouterConfig } from "../types/index.ts";
 
@@ -27,7 +27,7 @@ describe("ConfigManager", () => {
         await unlink(testConfigPath);
       }
       if (existsSync(testDir)) {
-        await rmdir(testDir, { recursive: true });
+        await rm(testDir, { recursive: true });
       }
     } catch {
       // Ignore cleanup errors
@@ -62,7 +62,7 @@ routes:
       expect(config.server?.port).toBe(3000);
       expect(config.providers.openai?.baseUrl).toBe("https://api.openai.com/v1");
       expect(config.routes.length).toBe(1);
-      expect(config.routes[0].pattern).toBe("gpt-4*");
+      expect(config.routes[0]!.pattern).toBe("gpt-4*");
     });
 
     test("should merge with defaults", async () => {
@@ -94,8 +94,8 @@ routes: []
       const config = await manager.load();
 
       expect(config.schemes?.length).toBe(2);
-      expect(config.schemes?.[0].id).toBe("openai-chat");
-      expect(config.schemes?.[1].id).toBe("anthropic-messages");
+      expect(config.schemes?.[0]!.id).toBe("openai-chat");
+      expect(config.schemes?.[1]!.id).toBe("anthropic-messages");
     });
   });
 
@@ -193,9 +193,9 @@ routes: []
       ]);
 
       const config = manager.getConfig();
-      expect(config.routes[0].pattern).toBe("gpt-4*");
-      expect(config.routes[1].pattern).toBe("claude-*");
-      expect(config.routes[2].pattern).toBe("*");
+      expect(config.routes[0]!.pattern).toBe("gpt-4*");
+      expect(config.routes[1]!.pattern).toBe("claude-*");
+      expect(config.routes[2]!.pattern).toBe("*");
     });
   });
 
@@ -212,7 +212,7 @@ routes: []
 
       const config = manager.getConfig();
       expect(config.routes.length).toBe(1);
-      expect(config.routes[0].pattern).toBe("gpt-4*");
+      expect(config.routes[0]!.pattern).toBe("gpt-4*");
     });
 
     test("should insert before catch-all", async () => {
@@ -229,8 +229,8 @@ routes:
 
       const config = manager.getConfig();
       expect(config.routes.length).toBe(2);
-      expect(config.routes[0].pattern).toBe("gpt-4*");
-      expect(config.routes[1].pattern).toBe("*");
+      expect(config.routes[0]!.pattern).toBe("gpt-4*");
+      expect(config.routes[1]!.pattern).toBe("*");
     });
   });
 

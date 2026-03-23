@@ -102,8 +102,8 @@ export class LoggingManager extends EventEmitter {
         model: entry.model,
         apiKey: this.maskKeys ? this.maskSensitive(entry.requestHeaders["authorization"] || entry.requestHeaders["x-api-key"] || "") : 
                                 (entry.requestHeaders["authorization"] || entry.requestHeaders["x-api-key"] || ""),
-        streaming: entry.requestBody && typeof entry.requestBody === "object" && 
-                   (entry.requestBody as Record<string, unknown>).stream === true,
+        streaming: !!(entry.requestBody && typeof entry.requestBody === "object" && 
+                   (entry.requestBody as Record<string, unknown>).stream === true),
         endpoint: entry.path,
         fullRequest: entry.requestBody,
         headers: entry.requestHeaders,

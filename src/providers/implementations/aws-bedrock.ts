@@ -24,7 +24,7 @@ export class AWSBedrockProvider extends BaseProvider {
   /**
    * Check if AWS credentials are available
    */
-  hasApiKey(): boolean {
+  override hasApiKey(): boolean {
     const creds = this.getAWSCredentials();
     return !!(creds.accessKeyId && creds.secretAccessKey);
   }
@@ -32,7 +32,7 @@ export class AWSBedrockProvider extends BaseProvider {
   /**
    * Get base URL with region substitution
    */
-  getBaseUrl(): string {
+  override getBaseUrl(): string {
     const creds = this.getAWSCredentials();
     return this.config.baseUrl.replace("{region}", creds.region || "us-east-1");
   }
@@ -40,7 +40,7 @@ export class AWSBedrockProvider extends BaseProvider {
   /**
    * AWS Bedrock uses model-specific paths
    */
-  getEndpointUrl(format: string): string {
+  override getEndpointUrl(format: string): string {
     const baseUrl = this.getBaseUrl();
     
     switch (format) {
@@ -59,7 +59,7 @@ export class AWSBedrockProvider extends BaseProvider {
   /**
    * AWS Bedrock doesn't have a simple models list endpoint
    */
-  getModelsUrl(): string | null {
+  override getModelsUrl(): string | null {
     return null;
   }
 

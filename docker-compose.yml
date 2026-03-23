@@ -1,0 +1,61 @@
+# API Map - Docker Compose Configuration
+# ============================================================
+# Quick start: docker-compose up -d
+# 
+# Services:
+#   - apimap: The API router + Management GUI
+#
+# Ports:
+#   - 3000: API server (OpenAI/Anthropic compatible)
+#   - 3001: Management GUI (web interface)
+#
+# Environment variables:
+#   - OPENAI_API_KEY: Your OpenAI API key
+#   - ANTHROPIC_API_KEY: Your Anthropic API key
+#   - OLLAMA_BASE_URL: Base URL for local Ollama (default: http://host.docker.internal:11434)
+#
+# Volumes:
+#   - ./config: Configuration files (persisted)
+#   - ./logs: Request logs (persisted)
+#
+# ============================================================
+
+services:
+  apimap:
+    image: apimap/apimap:latest
+    container_name: apimap
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+      - "3001:3001"
+    environment:
+      # API Keys - set these in your environment or .env file
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - TOGETHER_API_KEY=${TOGETHER_API_KEY:-}
+      - FIREWORKS_API_KEY=${FIREWORKS_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
+      - COHERE_API_KEY=${COHERE_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY:-}
+      - ANYSCALE_API_KEY=${ANYSCALE_API_KEY:-}
+      
+      # Ollama configuration (for local models)
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    volumes:
+      - ./config:/app/config:rw
+      - ./logs:/app/logs:rw
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+# Networks
+networks:
+  default:
+    driver: bridge

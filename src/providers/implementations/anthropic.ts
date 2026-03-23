@@ -12,7 +12,7 @@ export class AnthropicProvider extends BaseProvider {
   /**
    * Override getHeaders to include anthropic-version
    */
-  getHeaders(): Record<string, string> {
+  override getHeaders(): Record<string, string> {
     const apiKey = this.getApiKey();
     
     const headers: Record<string, string> = {
@@ -33,7 +33,7 @@ export class AnthropicProvider extends BaseProvider {
   /**
    * Anthropic uses /v1/messages endpoint
    */
-  getEndpointUrl(format: string): string {
+  override getEndpointUrl(format: string): string {
     const baseUrl = this.config.baseUrl;
     return `${baseUrl}/v1/messages`;
   }
@@ -41,7 +41,7 @@ export class AnthropicProvider extends BaseProvider {
   /**
    * Get models URL for Anthropic
    */
-  getModelsUrl(): string | null {
+  override getModelsUrl(): string | null {
     return `${this.config.baseUrl}/v1/models`;
   }
 

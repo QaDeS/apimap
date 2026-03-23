@@ -13,7 +13,7 @@ export class OllamaProvider extends BaseProvider {
   /**
    * Ollama uses /api endpoints
    */
-  getEndpointUrl(format: string): string {
+  override getEndpointUrl(format: string): string {
     const baseUrl = this.config.baseUrl;
     
     switch (format) {
@@ -34,7 +34,7 @@ export class OllamaProvider extends BaseProvider {
   /**
    * Ollama uses /api/tags for models
    */
-  getModelsUrl(): string | null {
+  override getModelsUrl(): string | null {
     return `${this.config.baseUrl}/api/tags`;
   }
 
@@ -52,7 +52,7 @@ export class OllamaProvider extends BaseProvider {
   /**
    * Ollama doesn't require an API key
    */
-  hasApiKey(): boolean {
+  override hasApiKey(): boolean {
     return true;
   }
 }

@@ -21,7 +21,7 @@ import type { InternalRequest, InternalResponse, InternalStreamChunk } from "./t
 
 import { ConfigManager } from "./config/manager.ts";
 import { providerRegistry } from "./providers/registry.ts";
-import { BUILTIN_PROVIDERS } from "./providers/builtin.ts";
+import { BUILTIN_PROVIDERS, type ProviderInfo } from "./providers/builtin.ts";
 import { LoggingManager } from "./logging/index.ts";
 import { Router } from "./router/index.ts";
 import * as transformers from "./transformers/index.ts";
@@ -57,7 +57,8 @@ interface ActiveRequest {
 }
 
 let state: ServerState;
-let server: Server;
+let server: Server<unknown>;
+let apiPort: number = 3000; // Default API port
 
 // Active requests tracking for live monitor
 const activeRequests = new Map<string, ActiveRequest>();
@@ -117,7 +118,7 @@ function parseArgs(): Record<string, string> {
   const argv = process.argv.slice(2);
 
   for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
+    const arg = argv[i]!;
     if (arg.startsWith("--")) {
       const key = arg.slice(2);
       const value = argv[i + 1];
@@ -236,7 +237,7 @@ function getCORSHeaders(requestOrigin: string | null, config: RouterConfig): Rec
       } else {
         allowOrigin = cors.origin[0] || "*";
       }
-    } else {
+    } else if (cors.origin) {
       allowOrigin = cors.origin;
     }
   } else if (requestOrigin) {
@@ -294,7 +295,7 @@ async function handleRequest(
   // Parse body based on format
   let body: Record<string, unknown>;
   try {
-    body = await req.json();
+    body = (await req.json()) as Record<string, unknown>;
   } catch {
     return jsonResponse({ error: "Invalid JSON" }, 400, config, req.headers.get("origin"));
   }
@@ -316,7 +317,7 @@ async function handleRequest(
   
   // Create internal request
   const internalReq = transformers.parseRequest(scheme.format as transformers.ProviderFormat, body, {
-    sourceFormat: scheme.format,
+    sourceFormat: scheme.format as "openai" | "anthropic" | "google" | "ollama" | "custom",
     endpoint: endpointPath,
     headers: Object.fromEntries(req.headers.entries()),
     apiKey,
@@ -464,8 +465,8 @@ async function handleRequest(
     if (body.stream && provider.supportsStreaming()) {
       const stream = await createStreamingResponse(
         response,
-        scheme.format,
-        targetFormat,
+        scheme.format as transformers.ProviderFormat,
+        targetFormat as transformers.ProviderFormat,
         route.model,
         logEntry,
         startTime,
@@ -485,7 +486,7 @@ async function handleRequest(
     // Non-streaming response
     const responseData = await response.json();
     const internalResp = transformers.parseResponse(targetFormat, responseData);
-    const clientResp = transformers.toProviderResponse(scheme.format, internalResp);
+    const clientResp = transformers.toProviderResponse(scheme.format as transformers.ProviderFormat, internalResp);
 
     // Store both raw upstream and transformed response when format conversion happened
     if (scheme.format !== targetFormat) {
@@ -497,13 +498,28 @@ async function handleRequest(
     await state.logging.log(logEntry);
 
     // Update tracking with response
-    const responseContent = typeof clientResp === 'object' && clientResp !== null
-      ? (clientResp as Record<string, unknown>).choices?.[0]?.message?.content ||
-        (clientResp as Record<string, unknown>).content?.[0]?.text || ''
-      : '';
+    let responseContent = '';
+    if (typeof clientResp === 'object' && clientResp !== null) {
+      const resp = clientResp as Record<string, unknown>;
+      const choices = resp.choices as unknown[] | undefined;
+      if (choices && choices.length > 0) {
+        const firstChoice = choices[0] as Record<string, unknown>;
+        const message = firstChoice.message as Record<string, unknown> | undefined;
+        if (message?.content) {
+          responseContent = String(message.content);
+        }
+      }
+      const content = resp.content as unknown[] | undefined;
+      if (content && content.length > 0) {
+        const firstContent = content[0] as Record<string, unknown>;
+        if (firstContent.text) {
+          responseContent = String(firstContent.text);
+        }
+      }
+    }
     updateRequest(requestId, { 
       status: 'completed', 
-      content: String(responseContent),
+      content: responseContent,
       endTime: Date.now() 
     });
     cleanupOldRequests();
@@ -638,10 +654,18 @@ async function handleAnthropicPassthrough(
     await state.logging.log(logEntry);
 
     // Update tracking
-    const responseContent = responseData?.content?.[0]?.text || '';
+    const respData = responseData as Record<string, unknown>;
+    const content = respData.content as unknown[] | undefined;
+    let responseContent = '';
+    if (content && content.length > 0) {
+      const firstContent = content[0] as Record<string, unknown>;
+      if (firstContent.text) {
+        responseContent = String(firstContent.text);
+      }
+    }
     updateRequest(requestId, {
       status: 'completed',
-      content: String(responseContent),
+      content: responseContent,
       endTime: Date.now()
     });
     cleanupOldRequests();
@@ -665,8 +689,8 @@ async function handleAnthropicPassthrough(
 
 async function createStreamingResponse(
   response: Response,
-  sourceFormat: string,
-  targetFormat: string,
+  sourceFormat: transformers.ProviderFormat,
+  targetFormat: transformers.ProviderFormat,
   model: string,
   logEntry: LogEntry,
   startTime: number,
@@ -710,7 +734,7 @@ async function createStreamingResponse(
       }
 
       while (true) {
-        let readResult: ReadableStreamReadResult<Uint8Array>;
+        let readResult: ReturnType<typeof reader.read> extends Promise<infer T> ? T : never;
         try {
           readResult = await reader.read();
         } catch (readError) {
@@ -1731,11 +1755,13 @@ async function handleGetModelsAnthropic(corsHeaders: Record<string, string>): Pr
     }
   }
   
+  const firstModel = models[0];
+  const lastModel = models[models.length - 1];
   return new Response(JSON.stringify({
     data: models,
     has_more: false,
-    first_id: models.length > 0 ? models[0].id : null,
-    last_id: models.length > 0 ? models[models.length - 1].id : null,
+    first_id: firstModel ? firstModel.id : null,
+    last_id: lastModel ? lastModel.id : null,
   }), {
     headers: { "Content-Type": "application/json", ...corsHeaders }
   });
@@ -1823,7 +1849,7 @@ async function main() {
   });
 
   // Override port from CLI
-  const apiPort = args.port ? parseInt(args.port, 10) : (config.server?.port || 3000);
+  apiPort = args.port ? parseInt(args.port, 10) : (config.server?.port || 3000);
   const host = config.server?.host || "0.0.0.0";
   const displayHost = getDisplayHostname(args.hostname, config.server?.host);
 
@@ -1928,14 +1954,23 @@ ${boxBottom()}
       const requestId = generateRequestId();
       const startTime = Date.now();
 
-      // CORS preflight
+      // CORS preflight — admin endpoints always allow all origins
       if (req.method === "OPTIONS") {
+        if (url.pathname.startsWith("/admin/")) {
+          return new Response(null, { status: 204, headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          }});
+        }
         return new Response(null, { status: 204, headers: corsHeaders });
       }
 
       // WebSocket upgrade for live monitor
       if (url.pathname === "/ws") {
-        const upgraded = server.upgrade(req);
+        const upgraded = server.upgrade(req, {
+          data: { requestId }
+        });
         if (upgraded) {
           return undefined;
         }

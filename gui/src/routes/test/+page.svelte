@@ -1,10 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   
-  // API URL is injected by GUI server
-  const API_URL = typeof window !== 'undefined' && (window as any).API_URL 
-    ? (window as any).API_URL 
-    : 'http://localhost:3000';
+  import { resolveApiUrl } from '$lib/utils/api';
+  const API_URL = resolveApiUrl();
   import { 
     Beaker, 
     Send, 

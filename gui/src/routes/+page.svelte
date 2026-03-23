@@ -2,10 +2,8 @@
   import { onMount } from 'svelte';
   import { AlertTriangle, CheckCircle, Activity, Clock, Server, Route, Zap, Plus, X, Eye } from '@lucide/svelte';
   
-  // API URL is injected by GUI server
-  const API_URL = typeof window !== 'undefined' && (window as any).API_URL 
-    ? (window as any).API_URL 
-    : 'http://localhost:3000';
+  import { resolveApiUrl } from '$lib/utils/api';
+  const API_URL = resolveApiUrl();
 
   // Simple local state
   let status = $state<any>(null);

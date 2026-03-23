@@ -246,8 +246,8 @@ export function toOpenAIRequest(request: InternalRequest): OpenAIRequest {
     } else {
       // Convert content blocks to text
       const systemText = request.system
-        .filter((b): b is Extract<typeof b, { type: "text" }> => b.type === "text")
-        .map(b => b.text)
+        .filter((b) => b.type === "text")
+        .map((b) => (b as { type: "text"; text?: string }).text || "")
         .join("\n");
       messages.push({ role: "system", content: systemText });
     }
@@ -452,7 +452,8 @@ export function toOpenAIStreamChunk(chunk: InternalStreamChunk, model: string): 
     }],
   };
 
-  const delta = data.choices[0].delta as Record<string, unknown>;
+  const choices = data.choices as Array<{ index?: number; delta: Record<string, unknown>; finish_reason?: string | null }>;
+  const delta = choices[0]!.delta;
 
   if (chunk.delta.type === "text" && chunk.delta.text) {
     delta.content = chunk.delta.text;

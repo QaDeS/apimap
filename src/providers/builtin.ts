@@ -451,6 +451,8 @@ const TIER5_PROVIDERS: Record<string, ProviderInfo> = {
 // Combined BUILTIN_PROVIDERS export
 // ============================================================================
 
+export type { ProviderInfo } from "./types.ts";
+
 export const BUILTIN_PROVIDERS: Record<string, ProviderInfo> = {
   ...TIER1_PROVIDERS,
   ...TIER2_PROVIDERS,

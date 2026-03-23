@@ -352,14 +352,21 @@ bun run src/server.ts --port 8080 --gui-port 0
 
 ### Docker
 
-```dockerfile
-FROM oven/bun:latest
-WORKDIR /app
-COPY . .
-RUN bun install
-EXPOSE 3000
-CMD ["bun", "run", "src/server.ts"]
+Use the provided `Dockerfile` and `docker-compose.yml`:
+
+```bash
+# Quick start
+docker-compose up -d
+
+# Build from source
+docker build -t apimap/apimap:latest .
 ```
+
+The Docker image exposes:
+- Port 3000: API server (OpenAI/Anthropic compatible endpoints)
+- Port 3001: Management GUI
+
+See `README.md` and `docker-compose.yml` for full deployment options.
 
 ## Security Considerations
 

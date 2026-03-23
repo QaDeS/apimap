@@ -13,7 +13,7 @@ export class AzureProvider extends BaseProvider {
   /**
    * Azure uses api-key header instead of Authorization
    */
-  getHeaders(): Record<string, string> {
+  override getHeaders(): Record<string, string> {
     const apiKey = this.getApiKey();
     
     const headers: Record<string, string> = {
@@ -33,7 +33,7 @@ export class AzureProvider extends BaseProvider {
   /**
    * Azure uses deployment-specific URLs with API version
    */
-  getEndpointUrl(format: string): string {
+  override getEndpointUrl(format: string): string {
     // Azure URLs should be configured as: 
     // https://{resource}.openai.azure.com/openai/deployments/{deployment}
     const baseUrl = this.config.baseUrl;
@@ -53,7 +53,7 @@ export class AzureProvider extends BaseProvider {
   /**
    * Get models URL for Azure
    */
-  getModelsUrl(): string | null {
+  override getModelsUrl(): string | null {
     const baseUrl = this.config.baseUrl;
     const apiVersion = this.config.headers?.["api-version"] || "2024-06-01";
     return `${baseUrl}/models?api-version=${apiVersion}`;

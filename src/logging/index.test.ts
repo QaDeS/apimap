@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { LoggingManager } from "./index.ts";
 import { existsSync } from "fs";
-import { mkdir, rmdir, unlink, readdir } from "fs/promises";
+import { mkdir, rm, unlink, readdir } from "fs/promises";
 import { join } from "path";
 import type { LogEntry } from "../types/index.ts";
 
@@ -11,7 +11,7 @@ describe("LoggingManager", () => {
 
   beforeEach(async () => {
     if (existsSync(testLogDir)) {
-      await rmdir(testLogDir, { recursive: true });
+      await rm(testLogDir, { recursive: true });
     }
     await mkdir(testLogDir, { recursive: true });
     manager = new LoggingManager(testLogDir, true);
@@ -20,7 +20,7 @@ describe("LoggingManager", () => {
 
   afterEach(async () => {
     if (existsSync(testLogDir)) {
-      await rmdir(testLogDir, { recursive: true });
+      await rm(testLogDir, { recursive: true });
     }
   });
 
@@ -28,7 +28,7 @@ describe("LoggingManager", () => {
     test("should create log directory if not exists", async () => {
       const newDir = "/tmp/apimap-test-logs-new";
       if (existsSync(newDir)) {
-        await rmdir(newDir, { recursive: true });
+        await rm(newDir, { recursive: true });
       }
 
       const newManager = new LoggingManager(newDir);
@@ -37,7 +37,7 @@ describe("LoggingManager", () => {
       expect(existsSync(newDir)).toBe(true);
 
       // Cleanup
-      await rmdir(newDir, { recursive: true });
+      await rm(newDir, { recursive: true });
     });
   });
 

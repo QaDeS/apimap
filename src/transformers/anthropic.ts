@@ -150,8 +150,9 @@ function anthropicMessageToInternal(msg: AnthropicMessage): InternalMessage {
 
     // Extract tool results
     const toolResults = content.filter(c => c.type === "tool_result");
-    if (toolResults.length > 0 && toolResults[0].toolResult) {
-      internalMsg.toolCallId = toolResults[0].toolResult.toolCallId;
+    const firstToolResult = toolResults[0];
+    if (firstToolResult && firstToolResult.toolResult) {
+      internalMsg.toolCallId = firstToolResult.toolResult.toolCallId;
     }
   }
 
@@ -171,7 +172,7 @@ function internalMessageToAnthropic(msg: InternalMessage): AnthropicMessage {
   }
 
   return {
-    role: msg.role,
+    role: msg.role as "user" | "assistant",
     content,
   };
 }
@@ -267,12 +268,15 @@ export function toAnthropicRequest(request: InternalRequest): AnthropicRequest {
       result.system = request.system;
     } else {
       result.system = request.system
-        .filter((s): s is Extract<typeof s, { type: "text" }> => s.type === "text")
-        .map(s => ({
-          type: "text",
-          text: s.text || "",
-          ...(s.cacheControl ? { cache_control: { type: "ephemeral" } } : {}),
-        }));
+        .filter((s) => s.type === "text")
+        .map((s) => {
+          const block = s as { type: "text"; text?: string; cacheControl?: string };
+          return {
+            type: "text" as const,
+            text: block.text || "",
+            ...(block.cacheControl ? { cache_control: { type: "ephemeral" } } : {}),
+          };
+        });
     }
   }
 

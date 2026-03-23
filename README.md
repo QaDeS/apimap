@@ -298,6 +298,70 @@ cd gui
 bun run build
 ```
 
+## Deployment
+
+### Docker (Recommended)
+
+The easiest way to run API Map is with Docker:
+
+```bash
+# Quick start with docker-compose
+docker-compose up -d
+
+# Or run directly with Docker
+docker run -d \
+  -p 3000:3000 \
+  -p 3001:3001 \
+  -e OPENAI_API_KEY=your-key \
+  -e ANTHROPIC_API_KEY=your-key \
+  -v ./config:/app/config \
+  -v ./logs:/app/logs \
+  apimap/apimap:latest
+```
+
+Access the GUI at `http://localhost:3001` and API at `http://localhost:3000`.
+
+### Environment Variables
+
+All supported API keys can be passed as environment variables:
+
+| Variable | Provider |
+|----------|----------|
+| `OPENAI_API_KEY` | OpenAI |
+| `ANTHROPIC_API_KEY` | Anthropic |
+| `GOOGLE_API_KEY` | Google Gemini |
+| `GROQ_API_KEY` | Groq |
+| `TOGETHER_API_KEY` | Together AI |
+| `FIREWORKS_API_KEY` | Fireworks AI |
+| `DEEPSEEK_API_KEY` | DeepSeek |
+| `MISTRAL_API_KEY` | Mistral AI |
+| `COHERE_API_KEY` | Cohere |
+| `OPENROUTER_API_KEY` | OpenRouter |
+| `PERPLEXITY_API_KEY` | Perplexity |
+| `ANYSCALE_API_KEY` | Anyscale |
+
+### Configuration
+
+Mount your own `config/config.yaml` to customize providers and routes:
+
+```bash
+docker run -d \
+  -p 3000:3000 \
+  -p 3001:3001 \
+  -v /path/to/your/config:/app/config \
+  apimap/apimap:latest
+```
+
+### Building from Source
+
+```bash
+# Build the Docker image
+docker build -t apimap/apimap:latest .
+
+# Or use docker-compose with local build
+docker-compose build
+```
+
 ## License
 
 MIT

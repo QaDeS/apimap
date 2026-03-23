@@ -13,7 +13,7 @@ export class CohereProvider extends BaseProvider {
   /**
    * Cohere uses /chat endpoint for chat completions
    */
-  getEndpointUrl(format: string): string {
+  override getEndpointUrl(format: string): string {
     const baseUrl = this.config.baseUrl;
     
     switch (format) {
@@ -32,7 +32,7 @@ export class CohereProvider extends BaseProvider {
   /**
    * Get models URL for Cohere
    */
-  getModelsUrl(): string | null {
+  override getModelsUrl(): string | null {
     return `${this.config.baseUrl}/models`;
   }
 

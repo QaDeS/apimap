@@ -1,10 +1,12 @@
 // API client for the management API
-// API URL is injected by the GUI server (production) or via env (dev)
-function resolveApiUrl(): string {
+// API URL is injected by the GUI server (production) or derived from browser location (dev)
+export function resolveApiUrl(): string {
   if (typeof window !== 'undefined') {
     const injected = (window as any).API_URL;
     // Skip the unresolved template placeholder
     if (injected && injected !== '{{API_URL}}') return injected;
+    // Use the same hostname the browser used to reach the GUI, but on API port
+    return `${window.location.protocol}//${window.location.hostname}:3000`;
   }
   return 'http://localhost:3000';
 }
