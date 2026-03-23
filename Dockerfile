@@ -46,13 +46,13 @@ RUN addgroup -g 1001 -S apimap && \
 COPY --from=builder /app/src src/
 COPY --from=builder /app/gui/build gui/build/
 COPY --from=builder /app/gui/package.json gui/package.json
-COPY --from=builder /app/config config/
+COPY --from=builder /app/config config/ 2>/dev/null || true
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/node_modules node_modules/
 
-# Create directories for logs and config
+# Create directories for logs and config (ensure writable)
 RUN mkdir -p logs config/backups && \
-    chown -R apimap:apimap /app
+    chmod 777 logs config config/backups
 
 USER apimap
 

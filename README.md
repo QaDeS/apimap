@@ -308,7 +308,7 @@ The easiest way to run API Map is with Docker:
 # Quick start with docker-compose
 docker-compose up -d
 
-# Or run directly with Docker
+# Or run directly with Docker (image name is lowercase: ghcr.io/qades/apimap)
 docker run -d \
   -p 3000:3000 \
   -p 3001:3001 \
@@ -316,7 +316,7 @@ docker run -d \
   -e ANTHROPIC_API_KEY=your-key \
   -v ./config:/app/config \
   -v ./logs:/app/logs \
-  apimap/apimap:latest
+  ghcr.io/qades/apimap:latest
 ```
 
 Access the GUI at `http://localhost:3001` and API at `http://localhost:3000`.
@@ -342,21 +342,21 @@ All supported API keys can be passed as environment variables:
 
 ### Configuration
 
-Mount your own `config/config.yaml` to customize providers and routes:
+Mount your own `config/config.yaml` to customize providers and routes. Note: The config and logs directories must be writable by the container (use `chmod 777` on the host directories, or omit the volume mount to use the built-in directories with default configuration).
 
 ```bash
 docker run -d \
   -p 3000:3000 \
   -p 3001:3001 \
   -v /path/to/your/config:/app/config \
-  apimap/apimap:latest
+  ghcr.io/qades/apimap:latest
 ```
 
 ### Building from Source
 
 ```bash
-# Build the Docker image
-docker build -t apimap/apimap:latest .
+# Build the Docker image (image will be lowercase: qades/apimap:latest)
+docker build -t qades/apimap:latest .
 
 # Or use docker-compose with local build
 docker-compose build

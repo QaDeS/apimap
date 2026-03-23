@@ -1,10 +1,15 @@
 // API client for the management API
-// API URL is injected by the GUI server (production) or derived from browser location (dev)
+// API URL priority: injected value > VITE_API_URL env var > derived from window.location
 export function resolveApiUrl(): string {
   if (typeof window !== 'undefined') {
+    // Check for injected API_URL first
     const injected = (window as any).API_URL;
-    // Skip the unresolved template placeholder
     if (injected && injected !== '{{API_URL}}') return injected;
+    
+    // Check for environment variable override (useful for Docker)
+    const envUrl = import.meta.env?.VITE_API_URL;
+    if (envUrl) return envUrl;
+    
     // Use the same hostname the browser used to reach the GUI, but on API port
     return `${window.location.protocol}//${window.location.hostname}:3000`;
   }
