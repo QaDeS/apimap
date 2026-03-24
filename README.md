@@ -1,5 +1,9 @@
 # API Map - Universal Model Router
 
+[![CI](https://github.com/qades/apimap/actions/workflows/ci.yml/badge.svg)](https://github.com/qades/apimap/actions/workflows/ci.yml)
+[![Docker Image](https://img.shields.io/badge/docker-ghcr.io%2Fqades%2Fapimap-blue?logo=docker)](https://ghcr.io/qades/apimap)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A powerful AI model gateway that routes requests between OpenAI, Anthropic, local models (Ollama, LM Studio), and more. Features a modern SvelteKit GUI for easy configuration and request monitoring.
 
 ## Features
@@ -11,45 +15,88 @@ A powerful AI model gateway that routes requests between OpenAI, Anthropic, loca
 - **Configuration Management**: Visual editor for providers, routes, and YAML configuration with automatic backups
 - **Streaming Support**: Full support for streaming responses across all compatible providers
 
+## Installation
+
+### Option 1: Docker (Recommended)
+
+The fastest way to get started. Works on Linux, macOS, and Windows.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/qades/apimap/main/scripts/install.sh | bash
+```
+
+This will:
+- Install API Map to `~/.local/share/apimap`
+- Create proper directories with correct permissions
+- Set up a convenient `apimap` command
+- Optionally configure systemd service (Linux)
+
+Then start the server:
+```bash
+~/.local/share/apimap/apimap start
+```
+
+Or with Docker Compose:
+```bash
+# Create directories with correct permissions
+mkdir -p config logs
+sudo chown -R 1001:1001 config logs  # Linux/macOS
+
+# Set your API keys
+export OPENAI_API_KEY="your-key"
+export ANTHROPIC_API_KEY="your-key"
+
+# Start
+docker-compose up -d
+```
+
+### Option 2: Binary Installation (No Docker)
+
+For systems without Docker, install the standalone binary:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/qades/apimap/main/scripts/install-binary.sh | bash
+```
+
+This requires [Bun](https://bun.sh) (auto-installed if missing). The binary will be built from source.
+
+Then:
+```bash
+apimap start
+```
+
+### Option 3: Manual Installation
+
+See [Development](#development) section below for building from source.
+
 ## Quick Start
 
-### 1. Install Dependencies
+After installation, access:
+- **API**: http://localhost:3000
+- **GUI**: http://localhost:3001
 
-```bash
-bun install
-cd gui && bun install && cd ..
+Configure your providers in `config/config.yaml` or through the web GUI.
+
+Example configuration:
+```yaml
+providers:
+  openai:
+    apiKeyEnv: "OPENAI_API_KEY"
+  
+  anthropic:
+    apiKeyEnv: "ANTHROPIC_API_KEY"
+
+routes:
+  - pattern: "gpt-4*"
+    provider: openai
+    priority: 100
+  
+  - pattern: "claude-3*"
+    provider: anthropic
+    priority: 90
+
+defaultProvider: openai
 ```
-
-### 2. Configure
-
-Copy the example config and edit:
-
-```bash
-mkdir -p config
-cp config.example.yaml config/config.yaml
-```
-
-Edit `config/config.yaml` to add your API keys and routes.
-
-### 3. Run
-
-Start both the API server and GUI:
-
-```bash
-# Terminal 1: Start API server
-bun run dev
-
-# Terminal 2: Start GUI
-cd gui && bun run dev
-```
-
-Or use the combined start script:
-
-```bash
-bun run start:all
-```
-
-The API will be available at `http://localhost:3000` and the GUI at `http://localhost:3001`.
 
 ## Project Structure
 
@@ -300,26 +347,87 @@ bun run build
 
 ## Deployment
 
-### Docker (Recommended)
+### Automated Installation (Recommended)
 
-The easiest way to run API Map is with Docker:
+Use the install script for the easiest setup:
 
 ```bash
-# Quick start with docker-compose
-docker-compose up -d
+curl -fsSL https://raw.githubusercontent.com/qades/apimap/main/scripts/install.sh | bash
+```
 
-# Or run directly with Docker (image name is lowercase: ghcr.io/qades/apimap)
+This handles directory creation, permission setup, and provides convenient commands:
+```bash
+~/.local/share/apimap/apimap start   # Start server
+~/.local/share/apimap/apimap stop    # Stop server
+~/.local/share/apimap/apimap logs    # View logs
+~/.local/share/apimap/apimap update  # Update to latest
+```
+
+### Docker Compose
+
+For manual Docker deployment:
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/qades/apimap.git
+cd apimap
+
+# 2. Create directories with correct permissions
+mkdir -p config logs
+
+# Linux/macOS: Set ownership to container user (UID 1001)
+sudo chown -R 1001:1001 config logs
+
+# Alternative (less secure): Make directories world-writable
+# chmod -R 777 config logs
+
+# 3. Start with docker-compose
+docker-compose up -d
+```
+
+### Docker Run
+
+For direct Docker execution:
+
+```bash
+# Create directories with proper permissions
+mkdir -p config logs
+sudo chown -R 1001:1001 config logs  # Linux/macOS only
+
+# Run container
 docker run -d \
+  --name apimap \
+  --restart unless-stopped \
   -p 3000:3000 \
   -p 3001:3001 \
-  -e OPENAI_API_KEY=your-key \
-  -e ANTHROPIC_API_KEY=your-key \
-  -v ./config:/app/config \
-  -v ./logs:/app/logs \
+  -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+  -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+  -v "$(pwd)/config:/app/config:rw" \
+  -v "$(pwd)/logs:/app/logs:rw" \
   ghcr.io/qades/apimap:latest
 ```
 
-Access the GUI at `http://localhost:3001` and API at `http://localhost:3000`.
+### Permission Troubleshooting
+
+The container runs as user `apimap` (UID 1001). If you see "permission denied" errors:
+
+**Linux/macOS:**
+```bash
+# Set ownership to container user
+sudo chown -R 1001:1001 ./config ./logs
+```
+
+**All platforms (fallback):**
+```bash
+# Make directories world-writable (less secure, but works everywhere)
+chmod -R 777 ./config ./logs
+```
+
+**Without persistent volumes:**
+Simply omit the volume mounts (logs/config will be lost when container stops):
+```bash
+docker run -d -p 3000:3000 -p 3001:3001 ghcr.io/qades/apimap:latest
+```
 
 ### Environment Variables
 
@@ -339,18 +447,6 @@ All supported API keys can be passed as environment variables:
 | `OPENROUTER_API_KEY` | OpenRouter |
 | `PERPLEXITY_API_KEY` | Perplexity |
 | `ANYSCALE_API_KEY` | Anyscale |
-
-### Configuration
-
-Mount your own `config/config.yaml` to customize providers and routes. Note: The config and logs directories must be writable by the container (use `chmod 777` on the host directories, or omit the volume mount to use the built-in directories with default configuration).
-
-```bash
-docker run -d \
-  -p 3000:3000 \
-  -p 3001:3001 \
-  -v /path/to/your/config:/app/config \
-  ghcr.io/qades/apimap:latest
-```
 
 ### Building from Source
 

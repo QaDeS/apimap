@@ -18,16 +18,29 @@
 #   - ./config: Configuration files (persisted)
 #   - ./logs: Request logs (persisted)
 #
+# Permission Setup (IMPORTANT):
+#   The container runs as user 'apimap' (UID 1001). You need to ensure
+#   the mounted directories are writable by this user:
+#
+#   Linux/macOS:
+#     sudo chown -R 1001:1001 ./config ./logs
+#
+#   Or make them world-writable (less secure):
+#     chmod -R 777 ./config ./logs
+#
+#   Alternative: Use the install script which handles this:
+#     curl -fsSL https://raw.githubusercontent.com/qades/apimap/main/scripts/install.sh | bash
+#
 # ============================================================
 
 services:
   apimap:
-    image: apimap/apimap:latest
+    image: ghcr.io/qades/apimap:latest
     container_name: apimap
     restart: unless-stopped
     ports:
-      - "3000:3000"
-      - "3001:3001"
+      - "${APIMAN_API_PORT:-3000}:3000"
+      - "${APIMAN_GUI_PORT:-3001}:3001"
     environment:
       # API Keys - set these in your environment or .env file
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
