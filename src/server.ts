@@ -2064,10 +2064,7 @@ ${boxBottom()}
           {
             cwd: guiDir,
             stdio: ["ignore", "inherit", "inherit"],
-            env: {
-              ...process.env,
-              PUBLIC_API_URL: `http://${displayHost}:${apiPort}`,
-            },
+            env: process.env,
           }
         );
         log.info(`GUI dev server at http://${displayHost}:${guiPort}/`);
@@ -2103,15 +2100,7 @@ ${boxBottom()}
               file = Bun.file(filePath);
             }
 
-            // Inject API URL into HTML
-            if (filePath.endsWith("index.html")) {
-              const html = await file.text();
-              const apiUrl = `http://${displayHost}:${apiPort}`;
-              const modifiedHtml = html.replace('{{API_URL}}', apiUrl);
-              return new Response(modifiedHtml, {
-                headers: { "Content-Type": "text/html" },
-              });
-            }
+ 
 
             return new Response(file);
           },

@@ -1,15 +1,6 @@
 // API client for the management API
-// API URL priority: injected value > VITE_API_URL env var > derived from window.location
 export function resolveApiUrl(): string {
   if (typeof window !== 'undefined') {
-    // Check for injected API_URL first
-    const injected = (window as any).API_URL;
-    if (injected && injected !== '{{API_URL}}') return injected;
-    
-    // Check for environment variable override (useful for Docker)
-    const envUrl = import.meta.env?.VITE_API_URL;
-    if (envUrl) return envUrl;
-    
     // Use the same hostname the browser used to reach the GUI, but on API port
     return `${window.location.protocol}//${window.location.hostname}:3000`;
   }
@@ -256,12 +247,12 @@ export interface ServerInfo {
   uptime: number;
 }
 
-// API URL is injected by the GUI server into window.API_URL
+// API URL is derived from window.location (GUI server hostname + API port)
 export const serverInfoApi = {
   get: () => fetchApi<ServerInfo>('/server-info'),
   
   // Get the API base URL for direct API calls (e.g., /v1/chat/completions)
-  // Uses the URL injected by the GUI server
+  // Uses window.location to determine the API URL
   getApiUrl: (): string => {
     return API_URL;
   },
