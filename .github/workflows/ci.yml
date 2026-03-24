@@ -87,37 +87,31 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Generate release notes
-        id: release_notes
         run: |
-          IMAGE="ghcr.io/${{ github.repository }}:latest"
-          echo "image=$IMAGE" >> $GITHUB_OUTPUT
-          
-          cat > release_notes.md << 'EOF'
+          REPO="${{ github.repository }}"
+          cat > release_notes.md << EOF
           ## Docker Image
 
-          ```bash
-          docker pull ${{ env.IMAGE }}
-          ```
+          \`\`\`bash
+          docker pull ghcr.io/${REPO}:latest
+          \`\`\`
 
           ## Quick Start
 
-          ```bash
+          \`\`\`bash
           # Using install script
-curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/install.sh | bash
+          curl -fsSL https://raw.githubusercontent.com/${REPO}/main/scripts/install.sh | bash
 
           # Or with docker-compose
-docker-compose up -d
-          ```
+          docker-compose up -d
+          \`\`\`
 
           ## Installation
 
-          See [README.md](https://github.com/${{ github.repository }}#installation) for detailed setup instructions.
+          See [README.md](https://github.com/${REPO}#installation) for detailed setup instructions.
 
           ---
           EOF
-          echo "body_path=release_notes.md" >> $GITHUB_OUTPUT
-        env:
-          IMAGE: ghcr.io/${{ github.repository }}:latest
 
       - name: Create release
         uses: softprops/action-gh-release@v2
