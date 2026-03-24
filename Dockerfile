@@ -46,7 +46,7 @@ RUN addgroup -g 1001 -S apimap && \
 COPY --from=builder /app/src src/
 COPY --from=builder /app/gui/build gui/build/
 COPY --from=builder /app/gui/package.json gui/package.json
-COPY --from=builder /app/config/config.example.yaml config/default_config.yaml
+COPY --from=builder /app/config.example.yaml config/default_config.yaml
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/node_modules node_modules/
 
