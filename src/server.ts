@@ -1874,7 +1874,7 @@ async function main() {
     config: configManager,
     router,
     logging: loggingManager,
-    version: "2.0.0",
+    version: "2.0.1",
     commitHash,
     startTime: new Date(),
   };
