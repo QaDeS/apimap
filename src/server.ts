@@ -2168,9 +2168,10 @@ ${boxBottom()}
               };
               // Replace the entire API_CONFIG assignment, handling both placeholder format
               // and pre-rendered values from the build process
+              // Use [\s\S]*? to match across multiple lines (non-greedy)
               const injected = content.replace(
-                /window\.API_CONFIG\s*=\s*["']?\{\{API_CONFIG\}\}["']?|window\.API_CONFIG\s*=\s*\{[^}]+\}/,
-                `window.API_CONFIG = ${JSON.stringify(apiConfig)}`
+                /window\.API_CONFIG\s*=\s*["']?\{\{API_CONFIG\}\}["']?|window\.API_CONFIG\s*=\s*\{[\s\S]*?\};/,
+                `window.API_CONFIG = ${JSON.stringify(apiConfig)};`
               );
               return new Response(injected, {
                 headers: { "Content-Type": "text/html" },

@@ -8,9 +8,7 @@ export async function handle({ event, resolve }) {
 		
 		// In dev mode, inject a script that reads host from browser's location
 		// This ensures it works regardless of how the user accesses the GUI
-		const apiConfigScript = `
-<script>
-(function() {
+		const apiConfigScript = `(function() {
 	var host = window.location.hostname;
 	var protocol = window.location.protocol === 'https:' ? 'https' : 'http';
 	window.API_CONFIG = {
@@ -19,24 +17,17 @@ export async function handle({ event, resolve }) {
 		host: host,
 		url: protocol + '://' + host + ':' + ${externalPort}
 	};
-})();
-</script>`;
+})();`;
 		
 		const originalText = await response.text();
 		
-		// Replace the API_CONFIG placeholder with the dynamic script
-		// or insert it before the closing </head> tag
-		let modifiedText;
-		if (originalText.includes('window.API_CONFIG')) {
-			// Replace existing API_CONFIG assignment
-			modifiedText = originalText.replace(
-				/window\.API_CONFIG\s*=\s*["']?\{\{API_CONFIG\}\}["']?|window\.API_CONFIG\s*=\s*\{[^}]+\};/,
-				apiConfigScript
-			);
-		} else {
-			// Insert before </head>
-			modifiedText = originalText.replace('</head>', apiConfigScript + '</head>');
-		}
+		// Replace the API_CONFIG placeholder or existing assignment
+		// The build output has: window.API_CONFIG = {"port":3000,...};
+		// We need to replace the entire assignment with our dynamic script
+		const modifiedText = originalText.replace(
+			/window\.API_CONFIG\s*=\s*["']?\{\{API_CONFIG\}\}["']?|window\.API_CONFIG\s*=\s*\{[\s\S]*?\}\s*;?/,
+			apiConfigScript
+		);
 		
 		return new Response(modifiedText, {
 			status: response.status,
