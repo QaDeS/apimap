@@ -84,17 +84,17 @@ jobs:
       contents: write
       packages: write
 
-    steps:
-- name: Checkout code
+   steps:
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-       - name: Get commit hash
-         id: commit-hash
-         run: echo "COMMIT_HASH=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      - name: Get commit hash
+        id: commit-hash
+        run: echo "COMMIT_HASH=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
-       - name: Generate release notes
+      - name: Generate release notes
         run: |
           REPO="${{ github.repository }}"
           cat > release_notes.md << EOF
