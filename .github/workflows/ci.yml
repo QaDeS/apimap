@@ -6,6 +6,7 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main, master, develop]
+  workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -84,10 +85,16 @@ jobs:
       packages: write
 
     steps:
-      - name: Checkout code
+- name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Generate release notes
+       - name: Get commit hash
+         id: commit-hash
+         run: echo "COMMIT_HASH=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+       - name: Generate release notes
         run: |
           REPO="${{ github.repository }}"
           cat > release_notes.md << EOF
