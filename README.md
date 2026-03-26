@@ -407,6 +407,35 @@ docker run -d \
   ghcr.io/qades/apimap:latest
 ```
 
+### Docker with Custom Port Mapping
+
+When running behind a reverse proxy or with custom external ports, you must tell the container about the external ports so the GUI can correctly reach the API:
+
+```bash
+# Example: Map external port 8080 to internal 3000 (API)
+#          and external port 8081 to internal 3001 (GUI)
+mkdir -p config logs
+sudo chown -R 1001:1001 config logs
+
+docker run -d \
+  --name apimap \
+  --restart unless-stopped \
+  -p 8080:3000 \
+  -p 8081:3001 \
+  -e EXTERNAL_PORT=8080 \
+  -e EXTERNAL_GUI_PORT=8081 \
+  -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+  -v "$(pwd)/config:/app/config:rw" \
+  -v "$(pwd)/logs:/app/logs:rw" \
+  ghcr.io/qades/apimap:latest
+```
+
+Access the services at:
+- API: http://localhost:8080
+- GUI: http://localhost:8081
+
+The `EXTERNAL_PORT` and `EXTERNAL_GUI_PORT` environment variables ensure the GUI knows how to reach the API from the browser's perspective.
+
 ### Permission Troubleshooting
 
 The container runs as user `apimap` (UID 1001). If you see "permission denied" errors:
@@ -430,6 +459,19 @@ docker run -d -p 3000:3000 -p 3001:3001 ghcr.io/qades/apimap:latest
 ```
 
 ### Environment Variables
+
+#### Port Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `EXTERNAL_PORT` | External port for API (when using port mapping) | Same as internal port (3000) |
+| `EXTERNAL_GUI_PORT` | External port for GUI (when using port mapping) | Same as internal port (3001) |
+| `API_PORT` | Internal API port (inside container) | 3000 |
+| `GUI_PORT` | Internal GUI port (inside container) | 3001 |
+
+**Important for Docker users:** When mapping ports (e.g., `-p 8080:3000`), always set `EXTERNAL_PORT=8080` so the GUI can correctly reach the API.
+
+#### API Keys
 
 All supported API keys can be passed as environment variables:
 

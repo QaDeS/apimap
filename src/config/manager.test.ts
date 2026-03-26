@@ -119,6 +119,86 @@ routes: []
       expect(savedContent).toContain("port: 8080");
       expect(savedContent).toContain("gpt-4*");
     });
+
+    test("should preserve externalPort through load-save roundtrip", async () => {
+      const yamlContent = `
+server:
+  port: 3000
+  externalPort: 8080
+providers: {}
+routes: []
+`;
+      await writeFile(testConfigPath, yamlContent);
+      await manager.load();
+
+      const config = manager.getConfig();
+      expect(config.server?.externalPort).toBe(8080);
+
+      await manager.save(config, false);
+
+      const savedContent = await Bun.file(testConfigPath).text();
+      expect(savedContent).toContain("externalPort: 8080");
+    });
+
+    test("should preserve externalHost through load-save roundtrip", async () => {
+      const yamlContent = `
+server:
+  port: 3000
+  externalHost: "api.example.com"
+providers: {}
+routes: []
+`;
+      await writeFile(testConfigPath, yamlContent);
+      await manager.load();
+
+      const config = manager.getConfig();
+      expect(config.server?.externalHost).toBe("api.example.com");
+
+      await manager.save(config, false);
+
+      const savedContent = await Bun.file(testConfigPath).text();
+      expect(savedContent).toContain('externalHost: "api.example.com"');
+    });
+
+    test("should preserve all server fields through roundtrip", async () => {
+      const yamlContent = `
+server:
+  port: 3000
+  externalPort: 8080
+  externalHost: "api.example.com"
+  host: "0.0.0.0"
+  timeout: 60
+  cors:
+    origin: "https://example.com"
+    credentials: true
+providers:
+  openai:
+    baseUrl: "https://api.openai.com/v1"
+routes:
+  - pattern: "*"
+    provider: openai
+`;
+      await writeFile(testConfigPath, yamlContent);
+      await manager.load();
+
+      const config = manager.getConfig();
+      expect(config.server?.port).toBe(3000);
+      expect(config.server?.externalPort).toBe(8080);
+      expect(config.server?.externalHost).toBe("api.example.com");
+      expect(config.server?.host).toBe("0.0.0.0");
+      expect(config.server?.timeout).toBe(60);
+      expect(config.server?.cors?.origin).toBe("https://example.com");
+      expect(config.server?.cors?.credentials).toBe(true);
+
+      await manager.save(config, false);
+
+      const savedContent = await Bun.file(testConfigPath).text();
+      expect(savedContent).toContain("port: 3000");
+      expect(savedContent).toContain("externalPort: 8080");
+      expect(savedContent).toContain('externalHost: "api.example.com"');
+      expect(savedContent).toContain('host: "0.0.0.0"');
+      expect(savedContent).toContain("timeout: 60");
+    });
   });
 
   describe("getConfig", () => {

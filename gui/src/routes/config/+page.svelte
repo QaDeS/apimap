@@ -209,6 +209,8 @@
           <h4 class="font-medium mb-2">Server Settings</h4>
           <ul class="space-y-1 list-disc list-inside">
             <li><code>server.port</code> - HTTP port (default: 3000)</li>
+            <li><code>server.externalPort</code> - External port for Docker/reverse proxy</li>
+            <li><code>server.externalHost</code> - External hostname for reverse proxy</li>
             <li><code>server.host</code> - Bind address (default: 0.0.0.0)</li>
             <li><code>server.timeout</code> - Request timeout in seconds (default: 120)</li>
             <li><code>server.cors.origin</code> - CORS allowed origins</li>

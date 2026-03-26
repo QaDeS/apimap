@@ -117,6 +117,8 @@ export class ConfigManager {
         host: "0.0.0.0",
         cors: { origin: "*", credentials: false },
         timeout: 120,
+        externalPort: parsed.server?.externalPort,
+        externalHost: parsed.server?.externalHost,
         ...parsed.server,
       },
       logging: {
@@ -229,6 +231,13 @@ export class ConfigManager {
     lines.push(`  port: ${config.server?.port ?? 3000}                    # Port to listen on`);
     lines.push(`  host: "${config.server?.host ?? "0.0.0.0"}"              # Host to bind to`);
     lines.push(`  timeout: ${config.server?.timeout ?? 120}                 # Request timeout in seconds`);
+    // Only include externalPort if it differs from port (for Docker/proxy scenarios)
+    if (config.server?.externalPort !== undefined && config.server?.externalPort !== config.server?.port) {
+      lines.push(`  externalPort: ${config.server.externalPort}             # External port (for Docker/reverse proxy)`);
+    }
+    if (config.server?.externalHost !== undefined && config.server?.externalHost !== config.server?.host) {
+      lines.push(`  externalHost: "${config.server.externalHost}"           # External hostname (for Docker/reverse proxy)`);
+    }
     lines.push("  cors:");
     lines.push(`    origin: ${JSON.stringify(config.server?.cors?.origin ?? "*")}                # CORS origin`);
     lines.push(`    credentials: ${config.server?.cors?.credentials ?? false}         # Allow credentials`);

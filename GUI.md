@@ -547,6 +547,47 @@ Clicking **Debug** expands to show raw request/response:
 
 ---
 
+## Server Configuration
+
+### Port Settings
+
+The GUI and API server ports can be configured via the `server` section in config:
+
+```yaml
+server:
+  port: 3000                    # Internal API port
+  externalPort: 8080            # External port (for Docker/reverse proxy)
+  host: "0.0.0.0"              # Bind address
+  externalHost: "api.example.com"  # External hostname
+  timeout: 120                 # Request timeout in seconds
+```
+
+| Setting | Description | When to Use |
+|---------|-------------|-------------|
+| `port` | Internal port the server listens on | Default configuration |
+| `externalPort` | Port users access from outside | Docker port mapping, reverse proxy |
+| `host` | Bind address inside container | Usually "0.0.0.0" in Docker |
+| `externalHost` | Public hostname | Reverse proxy with custom domain |
+
+**Important for Docker:** When using port mapping (e.g., `-p 8080:3000`), always set `externalPort: 8080` so the GUI can correctly generate API URLs.
+
+### Docker Port Mapping Example
+
+```yaml
+server:
+  port: 3000
+  externalPort: 8080           # Tell GUI that API is at :8080
+  host: "0.0.0.0"
+```
+
+With this config and docker run `-p 8080:3000`, users access:
+- API at `http://localhost:8080`
+- GUI at `http://localhost:3001`
+
+The GUI will correctly use port 8080 for API calls from the browser.
+
+---
+
 ## Auto-Save Behavior
 
 ### What Auto-Saves

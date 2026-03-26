@@ -135,6 +135,8 @@ export interface ApiSchemeConfig {
 export interface RouterConfig {
   server?: {
     port?: number;
+    externalPort?: number;  // External port for container/proxy scenarios
+    externalHost?: string;  // External hostname for container/proxy scenarios
     host?: string;
     cors?: {
       origin?: string | string[];

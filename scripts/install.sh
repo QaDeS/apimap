@@ -7,10 +7,16 @@
 # For binary installation (without Docker), see install-binary.sh
 #
 # Environment variables:
-#   APIMAN_INSTALL_DIR - Installation directory (default: ~/.local/share/apimap)
-#   APIMAN_API_PORT    - API server port (default: 3000)
-#   APIMAN_GUI_PORT    - GUI server port (default: 3001)
-#   APIMAN_SKIP_SYSTEMD - Skip systemd service setup
+#   APIMAN_INSTALL_DIR    - Installation directory (default: ~/.local/share/apimap)
+#   APIMAN_API_PORT       - API server port (default: 3000)
+#   APIMAN_GUI_PORT       - GUI server port (default: 3001)
+#   APIMAN_EXTERNAL_PORT  - External API port for port mapping (default: same as API_PORT)
+#   APIMAN_EXTERNAL_GUI_PORT - External GUI port for port mapping (default: same as GUI_PORT)
+#   APIMAN_SKIP_SYSTEMD   - Skip systemd service setup
+#
+# Port Mapping Example:
+#   APIMAN_API_PORT=8080 APIMAN_EXTERNAL_PORT=8080 ./install.sh
+#   This maps external port 8080 to internal port 3000
 #
 
 set -e
@@ -23,6 +29,8 @@ CONFIG_DIR="$INSTALL_DIR/config"
 LOGS_DIR="$INSTALL_DIR/logs"
 API_PORT="${APIMAN_API_PORT:-3000}"
 GUI_PORT="${APIMAN_GUI_PORT:-3001}"
+EXTERNAL_PORT="${APIMAN_EXTERNAL_PORT:-$API_PORT}"
+EXTERNAL_GUI_PORT="${APIMAN_EXTERNAL_GUI_PORT:-$GUI_PORT}"
 SERVICE_NAME="apimap"
 
 # Colors
@@ -153,6 +161,16 @@ EOF
 create_compose_file() {
     log_info "Creating docker-compose.yml..."
     
+    # Only add external port env vars if they differ from internal ports
+    EXTERNAL_PORT_CONFIG=""
+    if [ "${EXTERNAL_PORT}" != "${API_PORT}" ]; then
+        EXTERNAL_PORT_CONFIG="      - EXTERNAL_PORT=${EXTERNAL_PORT}"
+    fi
+    if [ "${EXTERNAL_GUI_PORT}" != "${GUI_PORT}" ]; then
+        EXTERNAL_PORT_CONFIG="${EXTERNAL_PORT_CONFIG}
+      - EXTERNAL_GUI_PORT=${EXTERNAL_GUI_PORT}"
+    fi
+    
     cat > "$INSTALL_DIR/docker-compose.yml" << EOF
 # API Map - Docker Compose Configuration
 
@@ -181,6 +199,9 @@ services:
       
       # Ollama configuration (for local models)
       - OLLAMA_BASE_URL=\${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      
+      # Port mapping configuration (for reverse proxy scenarios)
+${EXTERNAL_PORT_CONFIG}
     volumes:
       - ${CONFIG_DIR}:/app/config:rw
       - ${LOGS_DIR}:/app/logs:rw
@@ -347,6 +368,12 @@ main() {
     log_info "Installation directory: $INSTALL_DIR"
     log_info "API port: $API_PORT"
     log_info "GUI port: $GUI_PORT"
+    if [ "${EXTERNAL_PORT}" != "${API_PORT}" ]; then
+        log_info "External API port: $EXTERNAL_PORT"
+    fi
+    if [ "${EXTERNAL_GUI_PORT}" != "${GUI_PORT}" ]; then
+        log_info "External GUI port: $EXTERNAL_GUI_PORT"
+    fi
     echo ""
     
     check_prerequisites
@@ -368,8 +395,16 @@ main() {
     echo "  ./apimap start"
     echo ""
     echo "Access:"
-    echo "  API: http://localhost:$API_PORT"
-    echo "  GUI: http://localhost:$GUI_PORT"
+    if [ "${EXTERNAL_PORT}" != "${API_PORT}" ]; then
+        echo "  API: http://localhost:$EXTERNAL_PORT (mapped to container port $API_PORT)"
+    else
+        echo "  API: http://localhost:$API_PORT"
+    fi
+    if [ "${EXTERNAL_GUI_PORT}" != "${GUI_PORT}" ]; then
+        echo "  GUI: http://localhost:$EXTERNAL_GUI_PORT (mapped to container port $GUI_PORT)"
+    else
+        echo "  GUI: http://localhost:$GUI_PORT"
+    fi
     echo ""
     echo "Configuration:"
     echo "  Edit: $CONFIG_DIR/config.yaml"

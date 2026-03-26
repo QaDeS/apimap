@@ -17,9 +17,20 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 
 server:
-  port: 3000                    # Port to listen on
+  port: 3000                    # Port to listen on (inside container)
   host: "0.0.0.0"              # Host to bind to (0.0.0.0 = all interfaces)
-  # externalPort: 3000          # External port for container mappings (null = use port)
+  
+  # External Port Configuration (for Docker/reverse proxy)
+  # When using port mapping (e.g., docker run -p 8080:3000), set this to
+  # the external port (8080) so the GUI can correctly reach the API.
+  # If not specified, defaults to the value of 'port' above.
+  # externalPort: 3000
+  
+  # External Host (optional)
+  # Use this when the public hostname differs from the bind host
+  # (e.g., behind a reverse proxy with custom domain)
+  # externalHost: "api.example.com"
+  
   cors:
     origin: "*"                # CORS origin (* = any, or specific domain)
     credentials: false         # Allow credentials
