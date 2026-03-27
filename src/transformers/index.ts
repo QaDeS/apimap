@@ -5,6 +5,7 @@
 import type { InternalRequest, InternalResponse, InternalStreamChunk, ProviderFormat } from "../types/internal.ts";
 import type { OpenAIRequest, OpenAIResponse, AnthropicRequest, AnthropicResponse } from "../types/index.ts";
 import * as openaiTransformer from "./openai.ts";
+import type { OpenAIResponsesRequest, OpenAIResponsesResponse } from "./openai.ts";
 import * as anthropicTransformer from "./anthropic.ts";
 
 export type { InternalRequest, InternalResponse, InternalStreamChunk, ProviderFormat };
@@ -25,8 +26,10 @@ export function parseRequest(
     case "openai":
     case "openai-compatible":
     case "openai-chat":
-    case "openai-responses":  // Responses API uses similar structure
       return openaiTransformer.parseOpenAIRequest(body as OpenAIRequest, metadata);
+    // OpenAI Responses API (uses "input" instead of "messages")
+    case "openai-responses":
+      return openaiTransformer.parseOpenAIResponsesRequest(body as OpenAIResponsesRequest, metadata);
     // OpenAI legacy completions API
     case "openai-completions":
       return openaiTransformer.parseOpenAICompletionRequest(body as import("./openai.ts").OpenAICompletionRequest, metadata);
@@ -52,9 +55,9 @@ export function toProviderRequest(format: ProviderFormat, request: InternalReque
     // OpenAI completions API (convert to chat format for providers)
     case "openai-completions":
       return openaiTransformer.toOpenAIRequest(request);
-    // OpenAI responses API (may have differences)
+    // OpenAI responses API (converts to standard OpenAI format for providers)
     case "openai-responses":
-      return openaiTransformer.toOpenAIRequest(request); // TODO: Handle responses API differences
+      return openaiTransformer.toOpenAIRequest(request);
     // Anthropic variants
     case "anthropic":
     case "anthropic-messages":
@@ -77,9 +80,9 @@ export function parseResponse(format: ProviderFormat, data: unknown): InternalRe
     // OpenAI completions API (responses are similar to chat)
     case "openai-completions":
       return openaiTransformer.parseOpenAIResponse(data as OpenAIResponse);
-    // OpenAI responses API
+    // OpenAI responses API (responses are similar to chat)
     case "openai-responses":
-      return openaiTransformer.parseOpenAIResponse(data as OpenAIResponse); // TODO: Handle responses API differences
+      return openaiTransformer.parseOpenAIResponse(data as OpenAIResponse);
     // Anthropic variants
     case "anthropic":
     case "anthropic-messages":
@@ -102,9 +105,9 @@ export function toProviderResponse(format: ProviderFormat, response: InternalRes
     // OpenAI completions API (response format differs from chat)
     case "openai-completions":
       return openaiTransformer.toOpenAICompletionResponse(response);
-    // OpenAI responses API
+    // OpenAI responses API (converts internal to Responses API format)
     case "openai-responses":
-      return openaiTransformer.toOpenAIResponse(response); // TODO: Handle responses API differences
+      return openaiTransformer.toOpenAIResponsesResponse(response);
     // Anthropic variants
     case "anthropic":
     case "anthropic-messages":
@@ -148,7 +151,7 @@ export function parseStreamChunk(
       } catch {
         return null;
       }
-    // OpenAI responses API
+    // OpenAI responses API (streaming similar to chat)
     case "openai-responses":
       try {
         if (!line.startsWith("data: ")) return null;
@@ -156,7 +159,7 @@ export function parseStreamChunk(
         if (json === "[DONE]") {
           return { index: 0, delta: { type: "text", text: "" }, isComplete: true };
         }
-        return openaiTransformer.parseOpenAIStreamChunk(JSON.parse(json)); // TODO: Handle responses API differences
+        return openaiTransformer.parseOpenAIStreamChunk(JSON.parse(json));
       } catch {
         return null;
       }
@@ -186,9 +189,9 @@ export function toProviderStreamChunk(
     // OpenAI completions API (different stream format)
     case "openai-completions":
       return openaiTransformer.toOpenAICompletionStreamChunk(chunk, model);
-    // OpenAI responses API
+    // OpenAI responses API (streaming same as chat)
     case "openai-responses":
-      return openaiTransformer.toOpenAIStreamChunk(chunk, model); // TODO: Handle responses API differences
+      return openaiTransformer.toOpenAIStreamChunk(chunk, model);
     // Anthropic variants
     case "anthropic":
     case "anthropic-messages":

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   
   import { resolveApiUrl } from '$lib/utils/api';
+  import MessageDisplay from '$lib/components/MessageDisplay.svelte';
   const API_URL = resolveApiUrl();
   import { 
     Beaker, 
@@ -30,7 +31,7 @@
   let systemMessage = $state('');
   let temperature = $state(0.7);
   let maxTokens = $state(1024);
-  let stream = $state(false);
+  let stream = $state(true);
   type ApiFormat = 'openai' | 'anthropic' | 'openai-responses' | 'openai-completions';
   let apiFormat = $state<ApiFormat>('openai');
   let showAdvanced = $state(false);
@@ -132,6 +133,7 @@
     loading = true;
     response = null;
     streamingContent = '';
+    streamingReasoning = '';  // Clear previous reasoning on new request
     
     const startTime = Date.now();
     
@@ -299,9 +301,12 @@
         } else if (apiFormat === 'openai-completions') {
           // Legacy OpenAI completions format
           const content = data.choices?.[0]?.text || '';
+          // Completions API doesn't support reasoning, but check extensions
+          const reasoningContent = data.reasoning_content;
           response = {
             success: true,
             content,
+            reasoningContent,
             provider: 'router',
             targetModel: data.model,
             duration,
@@ -316,9 +321,13 @@
           const content = data.output?.[0]?.content?.[0]?.text || 
                          data.output_text || 
                          data.choices?.[0]?.message?.content || '';
+          // Extract reasoning content from custom field or output array
+          const reasoningContent = data.reasoning_content || 
+            data.output?.find((o: any) => o.type === 'reasoning')?.content?.[0]?.text;
           response = {
             success: true,
             content,
+            reasoningContent,
             provider: 'router',
             targetModel: data.model,
             duration,
@@ -721,35 +730,13 @@
               </div>
             </div>
           </div>
-        {:else if response?.content || streamingContent}
+        {:else if response?.content || streamingContent || streamingReasoning}
           <div class="space-y-4">
-            <!-- Reasoning Content (Thinking) -->
-            {#if streamingReasoning || response?.reasoningContent}
-              <div class="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                <div class="flex items-center gap-2 mb-2">
-                  <Brain size={16} class="text-purple-600" />
-                  <span class="text-sm font-medium text-purple-800">Reasoning</span>
-                </div>
-                <div class="prose prose-sm max-w-none">
-                  <div class="whitespace-pre-wrap text-purple-900 text-sm leading-relaxed">
-                    {streamingReasoning || response?.reasoningContent}
-                    {#if loading && stream && !streamingReasoning}
-                      <span class="text-purple-400 italic">thinking...</span>
-                    {/if}
-                  </div>
-                </div>
-              </div>
-            {/if}
-
-            <!-- Response Content -->
-            <div class="prose prose-sm max-w-none">
-              <div class="whitespace-pre-wrap text-gray-800 leading-relaxed">
-                {streamingContent || response?.content}
-                {#if loading && stream}
-                  <span class="inline-block w-2 h-4 bg-blue-500 ml-1 animate-pulse"></span>
-                {/if}
-              </div>
-            </div>
+            <MessageDisplay 
+              content={streamingContent || response?.content || ''}
+              reasoningContent={streamingReasoning || response?.reasoningContent || ''}
+              isStreaming={loading && stream}
+            />
 
             <!-- Response Metadata -->
             {#if response?.usage || response?.provider}

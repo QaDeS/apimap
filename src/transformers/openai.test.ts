@@ -6,6 +6,10 @@ import {
   toOpenAIResponse,
   parseOpenAIStreamChunk,
   toOpenAIStreamChunk,
+  parseOpenAICompletionRequest,
+  parseOpenAIResponsesRequest,
+  toOpenAICompletionResponse,
+  toOpenAIResponsesResponse,
 } from "./openai.ts";
 import type { OpenAIRequest, OpenAIResponse } from "../types/index.ts";
 import type { InternalRequest } from "../types/internal.ts";
@@ -302,6 +306,38 @@ describe("OpenAI Transformer", () => {
       expect(chunk?.isComplete).toBe(true);
       expect(chunk?.finishReason).toBe("stop");
     });
+
+    test("should parse chunk with reasoning_content", () => {
+      const chunk = parseOpenAIStreamChunk({
+        choices: [
+          {
+            index: 0,
+            delta: { content: "42", reasoning_content: "Let me calculate..." },
+            finish_reason: null,
+          },
+        ],
+      });
+
+      expect(chunk).not.toBeNull();
+      expect(chunk?.delta.type).toBe("text");
+      expect(chunk?.delta.text).toBe("42");
+      expect(chunk?.reasoningContent).toBe("Let me calculate...");
+    });
+
+    test("should parse chunk with only reasoning_content", () => {
+      const chunk = parseOpenAIStreamChunk({
+        choices: [
+          {
+            index: 0,
+            delta: { reasoning_content: "Thinking..." },
+            finish_reason: null,
+          },
+        ],
+      });
+
+      expect(chunk).not.toBeNull();
+      expect(chunk?.reasoningContent).toBe("Thinking...");
+    });
   });
 
   describe("toOpenAIStreamChunk", () => {
@@ -316,6 +352,410 @@ describe("OpenAI Transformer", () => {
       expect(sse).toContain("data:");
       expect(sse).toContain("Hello");
       expect(sse).toContain("gpt-4");
+    });
+
+    test("should include reasoning_content in SSE format", () => {
+      const chunk = {
+        index: 0,
+        delta: { type: "text" as const, text: "The answer is 42" },
+        reasoningContent: "Let me calculate: 20 + 22 = 42",
+      };
+
+      const sse = toOpenAIStreamChunk(chunk, "deepseek-r1");
+
+      expect(sse).toContain("data:");
+      expect(sse).toContain("The answer is 42");
+      expect(sse).toContain("reasoning_content");
+      expect(sse).toContain("Let me calculate");
+    });
+
+    test("should include reasoning_content even when no text content", () => {
+      const chunk = {
+        index: 0,
+        delta: { type: "text" as const, text: "" },
+        reasoningContent: "Thinking step by step...",
+      };
+
+      const sse = toOpenAIStreamChunk(chunk, "o1-preview");
+
+      expect(sse).toContain("reasoning_content");
+      expect(sse).toContain("Thinking step by step");
+    });
+  });
+
+  // ============================================================================
+  // OpenAI Legacy Completions API Tests
+  // ============================================================================
+
+  describe("parseOpenAICompletionRequest (Legacy Completions API)", () => {
+    test("should parse string prompt", () => {
+      const req = parseOpenAICompletionRequest({
+        model: "gpt-3.5-turbo-instruct",
+        prompt: "Hello, how are you?",
+        max_tokens: 100,
+        temperature: 0.7,
+      }, {
+        sourceFormat: "openai-completions",
+        endpoint: "/v1/completions",
+        headers: {},
+        requestId: "test-123",
+        timestamp: "2024-01-01T00:00:00Z",
+      });
+
+      expect(req.model).toBe("gpt-3.5-turbo-instruct");
+      expect(req.messages.length).toBe(1);
+      expect(req.messages[0].role).toBe("user");
+      expect(req.messages[0].content).toBe("Hello, how are you?");
+      expect(req.maxTokens).toBe(100);
+      expect(req.temperature).toBe(0.7);
+    });
+
+    test("should parse array of string prompts", () => {
+      const req = parseOpenAICompletionRequest({
+        model: "gpt-3.5-turbo-instruct",
+        prompt: ["Hello, ", "how are you?"],
+      }, {
+        sourceFormat: "openai-completions",
+        endpoint: "/v1/completions",
+        headers: {},
+        requestId: "test-123",
+        timestamp: "2024-01-01T00:00:00Z",
+      });
+
+      expect(req.messages[0].content).toBe("Hello, how are you?");
+    });
+
+    test("should handle null/undefined prompt", () => {
+      const req = parseOpenAICompletionRequest({
+        model: "gpt-3.5-turbo-instruct",
+        prompt: null,
+      }, {
+        sourceFormat: "openai-completions",
+        endpoint: "/v1/completions",
+        headers: {},
+        requestId: "test-123",
+        timestamp: "2024-01-01T00:00:00Z",
+      });
+
+      expect(req.messages[0].content).toBe("");
+    });
+
+    test("should preserve completions-specific parameters", () => {
+      const req = parseOpenAICompletionRequest({
+        model: "gpt-3.5-turbo-instruct",
+        prompt: "Test",
+        suffix: " Suffix",
+        echo: true,
+        best_of: 3,
+        logprobs: 5,
+      }, {
+        sourceFormat: "openai-completions",
+        endpoint: "/v1/completions",
+        headers: {},
+        requestId: "test-123",
+        timestamp: "2024-01-01T00:00:00Z",
+      });
+
+      expect(req.extensions?.suffix).toBe(" Suffix");
+      expect(req.extensions?.echo).toBe(true);
+      expect(req.extensions?.best_of).toBe(3);
+      expect(req.extensions?.logprobs).toBe(5);
+    });
+  });
+
+  describe("toOpenAICompletionResponse (Legacy Completions API)", () => {
+    test("should convert internal response to completions format", () => {
+      const response = toOpenAICompletionResponse({
+        id: "cmpl-test123",
+        model: "gpt-3.5-turbo-instruct",
+        content: [{ type: "text", text: "This is a completion" }],
+        stopReason: "end_turn",
+        usage: {
+          promptTokens: 10,
+          completionTokens: 20,
+          totalTokens: 30,
+        },
+      });
+
+      expect(response.object).toBe("text_completion");
+      expect(response.choices[0].text).toBe("This is a completion");
+      expect(response.choices[0].finish_reason).toBe("stop");
+      expect(response.usage?.total_tokens).toBe(30);
+    });
+
+    test("should map stop reasons correctly", () => {
+      const lengthResponse = toOpenAICompletionResponse({
+        id: "cmpl-test",
+        model: "gpt-3.5-turbo-instruct",
+        content: [{ type: "text", text: "Truncated" }],
+        stopReason: "max_tokens",
+      });
+
+      expect(lengthResponse.choices[0].finish_reason).toBe("length");
+    });
+  });
+
+  // ============================================================================
+  // OpenAI Responses API Tests
+  // ============================================================================
+
+  describe("parseOpenAIResponsesRequest (Responses API)", () => {
+    test("should parse string input", () => {
+      const req = parseOpenAIResponsesRequest({
+        model: "gpt-4o",
+        input: "Hello, world!",
+        max_tokens: 100,
+        temperature: 0.7,
+      }, {
+        sourceFormat: "openai-responses",
+        endpoint: "/v1/responses",
+        headers: {},
+        requestId: "test-123",
+        timestamp: "2024-01-01T00:00:00Z",
+      });
+
+      expect(req.model).toBe("gpt-4o");
+      expect(req.messages.length).toBe(1);
+      expect(req.messages[0].role).toBe("user");
+      expect(req.messages[0].content).toBe("Hello, world!");
+      expect(req.maxTokens).toBe(100);
+      expect(req.temperature).toBe(0.7);
+    });
+
+    test("should parse array input with role-based items", () => {
+      const req = parseOpenAIResponsesRequest({
+        model: "gpt-4o",
+        input: [
+          { role: "system", content: "You are helpful" },
+          { role: "user", content: "Hello" },
+          { role: "assistant", content: "Hi there!" },
+          { role: "user", content: "How are you?" },
+        ],
+      }, {
+        sourceFormat: "openai-responses",
+        endpoint: "/v1/responses",
+        headers: {},
+        requestId: "test-123",
+        timestamp: "2024-01-01T00:00:00Z",
+      });
+
+      // System message should be extracted
+      expect(req.system).toBe("You are helpful");
+      // Should have 3 non-system messages
+      expect(req.messages.length).toBe(3);
+      expect(req.messages[0].role).toBe("user");
+      expect(req.messages[0].content).toBe("Hello");
+      expect(req.messages[1].role).toBe("assistant");
+      expect(req.messages[1].content).toBe("Hi there!");
+    });
+
+    test("should handle instructions field as system message", () => {
+      const req = parseOpenAIResponsesRequest({
+        model: "gpt-4o",
+        input: "Hello",
+        instructions: "Be concise",
+      }, {
+        sourceFormat: "openai-responses",
+        endpoint: "/v1/responses",
+        headers: {},
+        requestId: "test-123",
+        timestamp: "2024-01-01T00:00:00Z",
+      });
+
+      expect(req.system).toBe("Be concise");
+    });
+
+    test("should preserve reasoning parameters", () => {
+      const req = parseOpenAIResponsesRequest({
+        model: "o1-preview",
+        input: "Solve this problem",
+        reasoning: {
+          effort: "high",
+          generate_summary: true,
+        },
+      }, {
+        sourceFormat: "openai-responses",
+        endpoint: "/v1/responses",
+        headers: {},
+        requestId: "test-123",
+        timestamp: "2024-01-01T00:00:00Z",
+      });
+
+      expect(req.extensions?.reasoning).toEqual({
+        effort: "high",
+        generate_summary: true,
+      });
+      expect(req.extensions?.enable_thinking).toBe(true);
+    });
+
+    test("should parse tools correctly", () => {
+      const req = parseOpenAIResponsesRequest({
+        model: "gpt-4o",
+        input: "What's the weather?",
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "get_weather",
+              description: "Get weather for a location",
+              parameters: {
+                type: "object",
+                properties: {
+                  location: { type: "string" },
+                },
+              },
+            },
+          },
+        ],
+        tool_choice: "auto",
+      }, {
+        sourceFormat: "openai-responses",
+        endpoint: "/v1/responses",
+        headers: {},
+        requestId: "test-123",
+        timestamp: "2024-01-01T00:00:00Z",
+      });
+
+      expect(req.tools?.length).toBe(1);
+      expect(req.tools?.[0].name).toBe("get_weather");
+      expect(req.toolChoice).toBe("auto");
+    });
+
+    test("should preserve previous_response_id", () => {
+      const req = parseOpenAIResponsesRequest({
+        model: "gpt-4o",
+        input: "Follow up",
+        previous_response_id: "resp_prev123",
+      }, {
+        sourceFormat: "openai-responses",
+        endpoint: "/v1/responses",
+        headers: {},
+        requestId: "test-123",
+        timestamp: "2024-01-01T00:00:00Z",
+      });
+
+      expect(req.extensions?.previous_response_id).toBe("resp_prev123");
+    });
+  });
+
+  describe("toOpenAIResponsesResponse (Responses API)", () => {
+    test("should convert internal response to Responses API format", () => {
+      const response = toOpenAIResponsesResponse({
+        id: "resp-test123",
+        model: "gpt-4o",
+        content: [{ type: "text", text: "Hello, I'm doing well!" }],
+        stopReason: "end_turn",
+        usage: {
+          promptTokens: 10,
+          completionTokens: 20,
+          totalTokens: 30,
+        },
+      });
+
+      expect(response.object).toBe("response");
+      expect(response.output.length).toBe(1);
+      expect(response.output[0].type).toBe("message");
+      expect(response.output[0].role).toBe("assistant");
+      expect(response.output_text).toBe("Hello, I'm doing well!");
+      expect(response.status).toBe("completed");
+    });
+
+    test("should include tool calls as function_call outputs", () => {
+      const response = toOpenAIResponsesResponse({
+        id: "resp-test123",
+        model: "gpt-4o",
+        content: [{ type: "text", text: "Let me check that" }],
+        toolCalls: [
+          {
+            type: "tool_call",
+            toolCall: {
+              id: "call_123",
+              name: "get_weather",
+              arguments: { location: "Paris" },
+              argumentsJson: '{"location": "Paris"}',
+            },
+          },
+        ],
+        stopReason: "tool_use",
+      });
+
+      expect(response.output.length).toBe(2);
+      expect(response.output[1].type).toBe("function_call");
+      expect(response.output[1].name).toBe("get_weather");
+      expect(response.output[1].arguments).toBe('{"location": "Paris"}');
+    });
+
+    test("should include reasoning tokens in usage", () => {
+      const response = toOpenAIResponsesResponse({
+        id: "resp-test123",
+        model: "o1-preview",
+        content: [{ type: "text", text: "The answer is 42" }],
+        usage: {
+          promptTokens: 50,
+          completionTokens: 100,
+          totalTokens: 150,
+          reasoningTokens: 40,
+        },
+      });
+
+      expect(response.usage?.output_tokens_details?.reasoning_tokens).toBe(40);
+    });
+
+    test("should include reasoning_content when present", () => {
+      const response = toOpenAIResponsesResponse({
+        id: "resp-test123",
+        model: "deepseek-r1",
+        content: [{ type: "text", text: "The answer is 42" }],
+        reasoningContent: "Let me think about this... 40 + 2 = 42",
+      });
+
+      expect(response.reasoning_content).toBe("Let me think about this... 40 + 2 = 42");
+    });
+
+    test("should not include reasoning_content when not present", () => {
+      const response = toOpenAIResponsesResponse({
+        id: "resp-test123",
+        model: "gpt-4o",
+        content: [{ type: "text", text: "Hello!" }],
+      });
+
+      expect(response.reasoning_content).toBeUndefined();
+    });
+  });
+
+  // ============================================================================
+  // Error Handling Tests
+  // ============================================================================
+
+  describe("Error handling", () => {
+    test("should throw error when messages is undefined", () => {
+      expect(() => {
+        parseOpenAIRequest({
+          model: "gpt-4",
+          // messages is missing
+        } as OpenAIRequest, {
+          sourceFormat: "openai",
+          endpoint: "/v1/chat/completions",
+          headers: {},
+          requestId: "test-123",
+          timestamp: "2024-01-01T00:00:00Z",
+        });
+      }).toThrow("Invalid request: 'messages' array is required for chat completions");
+    });
+
+    test("should throw error when messages is not an array", () => {
+      expect(() => {
+        parseOpenAIRequest({
+          model: "gpt-4",
+          messages: "not an array",
+        } as unknown as OpenAIRequest, {
+          sourceFormat: "openai",
+          endpoint: "/v1/chat/completions",
+          headers: {},
+          requestId: "test-123",
+          timestamp: "2024-01-01T00:00:00Z",
+        });
+      }).toThrow("Invalid request: 'messages' array is required for chat completions");
     });
   });
 });

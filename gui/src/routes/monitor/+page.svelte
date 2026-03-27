@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getWsUrl } from '$lib/utils/api';
+  import MessageDisplay from '$lib/components/MessageDisplay.svelte';
   import { onMount, onDestroy } from 'svelte';
   import { 
     Activity, 
@@ -34,6 +35,7 @@
     status: 'pending' | 'streaming' | 'completed' | 'error';
     prompt?: string;
     content?: string;
+    reasoningContent?: string;
     error?: string;
     chunks: number;
     startTime: number;
@@ -444,7 +446,7 @@
                     <p class="text-sm text-red-700">{request.error}</p>
                   </div>
                 </div>
-              {:else if request.content}
+              {:else if request.content || request.status === 'streaming'}
                 <div class="p-4">
                   <div class="flex items-center justify-between mb-2">
                     <span class="text-xs font-medium text-gray-500 flex items-center gap-1">
@@ -452,14 +454,13 @@
                       Response Content
                     </span>
                   </div>
-                  <div class="bg-gray-50 rounded-lg p-3 max-h-96 overflow-auto">
-                    <pre class="text-sm text-gray-800 whitespace-pre-wrap">{request.content}</pre>
-                    {#if request.status === 'streaming'}
-                      <span class="inline-block w-2 h-4 bg-blue-500 ml-1 animate-pulse"></span>
-                    {/if}
-                  </div>
+                  <MessageDisplay 
+                    content={request.content || ''}
+                    reasoningContent={request.reasoningContent || ''}
+                    isStreaming={request.status === 'streaming'}
+                  />
                 </div>
-              {:else if request.status === 'streaming' || request.status === 'pending'}
+              {:else if request.status === 'pending'}
                 <div class="p-8 flex items-center justify-center text-gray-400">
                   <Loader2 size={24} class="animate-spin mr-2" />
                   <span>Waiting for response...</span>

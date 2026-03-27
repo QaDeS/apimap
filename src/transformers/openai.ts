@@ -39,6 +39,83 @@ export interface OpenAICompletionRequest {
 }
 
 // ============================================================================
+// OpenAI Responses API Types (newer input-based API)
+// ============================================================================
+
+export interface OpenAIResponsesRequest {
+  model: string;
+  input: string | OpenAIResponsesInputItem[];
+  instructions?: string;
+  max_tokens?: number;
+  temperature?: number;
+  top_p?: number;
+  stream?: boolean;
+  stop?: string | string[];
+  tools?: Array<{
+    type: "function" | "web_search" | "file_search";
+    function?: {
+      name: string;
+      description?: string;
+      parameters?: Record<string, unknown>;
+    };
+  }>;
+  tool_choice?: "auto" | "required" | "none" | { type: "function"; function: { name: string } };
+  parallel_tool_calls?: boolean;
+  previous_response_id?: string;
+  reasoning?: {
+    effort?: "low" | "medium" | "high";
+    generate_summary?: boolean;
+  };
+  response_format?: { type: "text" | "json_object" | "json_schema"; json_schema?: { name: string; schema: Record<string, unknown>; strict?: boolean } };
+  user?: string;
+  metadata?: Record<string, string>;
+  store?: boolean;
+}
+
+export type OpenAIResponsesInputItem = 
+  | { role: "user" | "assistant" | "system" | "developer"; content: string | Array<{ type: "input_text" | "input_image" | "input_file"; text?: string; image_url?: string; filename?: string; file_data?: string }> }
+  | { type: "message"; role: "user" | "assistant" | "system"; content: string | Array<unknown> }
+  | { type: "file"; filename?: string; file_data?: string; file_id?: string };
+
+export interface OpenAIResponsesResponse {
+  id: string;
+  object: "response";
+  created_at: number;
+  model: string;
+  output: OpenAIResponsesOutputItem[];
+  output_text?: string;
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+    input_tokens_details?: { cached_tokens?: number };
+    output_tokens_details?: { reasoning_tokens?: number };
+  };
+  error?: { message: string; code: string };
+  incomplete_details?: { reason: string };
+  instructions?: string;
+  max_tokens?: number;
+  temperature?: number;
+  top_p?: number;
+  tool_choice?: string | object;
+  tools?: unknown[];
+  parallel_tool_calls?: boolean;
+  previous_response_id?: string;
+  reasoning?: { effort: string; generate_summary?: boolean };
+  response_format?: { type: string };
+  status?: "in_progress" | "completed" | "incomplete";
+  user?: string;
+  metadata?: Record<string, string>;
+  store?: boolean;
+}
+
+export type OpenAIResponsesOutputItem =
+  | { type: "message"; id: string; status: "in_progress" | "completed" | "incomplete"; role: "assistant" | "user"; content: Array<{ type: "output_text" | "refusal"; text?: string; annotations?: unknown[] }> }
+  | { type: "function_call"; id: string; call_id: string; name: string; arguments: string; status: "in_progress" | "completed" | "incomplete" }
+  | { type: "web_search_call"; id: string; status: "in_progress" | "completed" | "incomplete" }
+  | { type: "file_search_call"; id: string; status: "in_progress" | "completed" | "incomplete"; results?: unknown[] };
+
+// ============================================================================
 // Content Block Transformations
 // ============================================================================
 
@@ -337,6 +414,11 @@ export function parseOpenAIRequest(
   body: OpenAIRequest,
   metadata: InternalRequest["metadata"]
 ): InternalRequest {
+  // Validate that messages array exists
+  if (!body.messages || !Array.isArray(body.messages)) {
+    throw new Error("Invalid request: 'messages' array is required for chat completions");
+  }
+  
   // Extract system message if present
   const systemMessages = body.messages.filter((m) => m.role === "system");
   const chatMessages = body.messages.filter((m) => m.role !== "system");
@@ -462,6 +544,209 @@ export function parseOpenAICompletionRequest(
       logprobs: body.logprobs,
     },
   };
+}
+
+// ============================================================================
+// OpenAI Responses API Transformations
+// ============================================================================
+
+/**
+ * Convert Responses API input items to internal messages
+ */
+function responsesInputToInternalMessages(
+  input: string | OpenAIResponsesInputItem[]
+): InternalMessage[] {
+  if (typeof input === "string") {
+    return [{ role: "user", content: input }];
+  }
+
+  return input.map((item): InternalMessage => {
+    // Handle simple message format
+    if ("role" in item && "content" in item && !("type" in item)) {
+      const content = typeof item.content === "string"
+        ? item.content
+        : item.content.map(c => c.text || "").join("");
+      return { role: item.role, content };
+    }
+
+    // Handle typed format
+    if ("type" in item) {
+      if (item.type === "message" && "role" in item) {
+        const content = typeof item.content === "string"
+          ? item.content
+          : String(item.content);
+        return { role: item.role, content };
+      }
+      if (item.type === "file") {
+        return { role: "user", content: `[File: ${item.filename || "attached"}]` };
+      }
+    }
+
+    // Default fallback
+    return { role: "user", content: String(item) };
+  });
+}
+
+/**
+ * Parse OpenAI Responses API request to internal format
+ * The Responses API uses an "input" field instead of "messages"
+ */
+export function parseOpenAIResponsesRequest(
+  body: OpenAIResponsesRequest,
+  metadata: InternalRequest["metadata"]
+): InternalRequest {
+  // Extract system message from input if present
+  let system: string | undefined;
+  let filteredInput = body.input;
+
+  if (Array.isArray(body.input)) {
+    const systemItems = body.input.filter(item => 
+      ("role" in item && item.role === "system") ||
+      ("type" in item && item.type === "message" && "role" in item && item.role === "system")
+    );
+    
+    if (systemItems.length > 0) {
+      system = systemItems.map(item => {
+        if ("content" in item) {
+          return typeof item.content === "string" ? item.content : JSON.stringify(item.content);
+        }
+        return "";
+      }).join("\n");
+      
+      // Filter out system messages from input
+      filteredInput = body.input.filter(item => 
+        !("role" in item && item.role === "system") &&
+        !("type" in item && item.type === "message" && "role" in item && item.role === "system")
+      );
+    }
+  }
+
+  // Also check for instructions field (alternative to system message)
+  if (body.instructions && !system) {
+    system = body.instructions;
+  }
+
+  // Build extensions
+  const extensions: Record<string, unknown> = {};
+  if (body.reasoning) {
+    extensions.reasoning = body.reasoning;
+    extensions.enable_thinking = body.reasoning.effort !== undefined;
+  }
+  if (body.previous_response_id) {
+    extensions.previous_response_id = body.previous_response_id;
+  }
+  if (body.store !== undefined) {
+    extensions.store = body.store;
+  }
+  if (body.parallel_tool_calls !== undefined) {
+    extensions.parallel_tool_calls = body.parallel_tool_calls;
+  }
+
+  // Convert tools format
+  const tools = body.tools?.map(t => ({
+    name: t.function?.name || "",
+    description: t.function?.description,
+    parameters: t.function?.parameters as InternalTool["parameters"],
+  }));
+
+  return {
+    model: body.model,
+    messages: responsesInputToInternalMessages(filteredInput),
+    system,
+    maxTokens: body.max_tokens,
+    temperature: body.temperature,
+    topP: body.top_p,
+    stream: body.stream,
+    stopSequences: body.stop ? (Array.isArray(body.stop) ? body.stop : [body.stop]) : undefined,
+    tools: tools,
+    toolChoice: body.tool_choice === "auto" || body.tool_choice === "required" || body.tool_choice === "none"
+      ? body.tool_choice
+      : body.tool_choice?.type === "function" 
+        ? { name: body.tool_choice.function.name }
+        : undefined,
+    parallelToolCalls: body.parallel_tool_calls,
+    responseFormat: body.response_format
+      ? { 
+          type: body.response_format.type === "json_schema" ? "json" : body.response_format.type,
+          schema: body.response_format.json_schema?.schema
+        }
+      : undefined,
+    user: body.user,
+    metadata,
+    extensions: Object.keys(extensions).length > 0 ? extensions : undefined,
+  };
+}
+
+/**
+ * Convert internal response to OpenAI Responses API format
+ */
+export function toOpenAIResponsesResponse(response: InternalResponse): OpenAIResponsesResponse {
+  // Convert content blocks to output items
+  const textContent = response.content
+    .filter(c => c.type === "text")
+    .map(c => c.text)
+    .join("");
+
+  const output: OpenAIResponsesOutputItem[] = [];
+
+  // Add text message output
+  if (textContent) {
+    output.push({
+      type: "message",
+      id: response.id || `resp_${Date.now()}`,
+      status: "completed",
+      role: "assistant",
+      content: [{
+        type: "output_text",
+        text: textContent,
+      }],
+    });
+  }
+
+  // Add tool calls as function_call outputs
+  if (response.toolCalls && response.toolCalls.length > 0) {
+    for (const tc of response.toolCalls) {
+      if (tc.type === "tool_call" && tc.toolCall) {
+        output.push({
+          type: "function_call",
+          id: tc.toolCall.id || `call_${Date.now()}`,
+          call_id: tc.toolCall.id || `call_${Date.now()}`,
+          name: tc.toolCall.name,
+          arguments: tc.toolCall.argumentsJson || JSON.stringify(tc.toolCall.arguments || {}),
+          status: "completed",
+        });
+      }
+    }
+  }
+
+  // Build response with reasoning content if present
+  const result: OpenAIResponsesResponse & { reasoning_content?: string } = {
+    id: response.id || `resp_${Date.now()}`,
+    object: "response",
+    created_at: Math.floor(Date.now() / 1000),
+    model: response.model,
+    output,
+    output_text: textContent || undefined,
+    status: response.stopReason === null ? "in_progress" : "completed",
+    ...(response.usage ? {
+      usage: {
+        input_tokens: response.usage.promptTokens,
+        output_tokens: response.usage.completionTokens,
+        total_tokens: response.usage.totalTokens,
+        ...(response.usage.reasoningTokens ? {
+          output_tokens_details: { reasoning_tokens: response.usage.reasoningTokens }
+        } : {}),
+      }
+    } : {}),
+  };
+
+  // Include reasoning content as extension field for GUI display
+  // (OpenAI Responses API doesn't have a standard field for this)
+  if (response.reasoningContent) {
+    result.reasoning_content = response.reasoningContent;
+  }
+
+  return result;
 }
 
 /**

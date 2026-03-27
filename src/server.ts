@@ -52,6 +52,7 @@ interface ActiveRequest {
   status: 'pending' | 'streaming' | 'completed' | 'error';
   prompt?: string;
   content?: string;
+  reasoningContent?: string;
   error?: string;
   chunks: number;
   startTime: number;
@@ -567,6 +568,7 @@ async function handleRequest(
 
     // Update tracking with response
     let responseContent = '';
+    let reasoningContent = '';
     if (typeof clientResp === 'object' && clientResp !== null) {
       const resp = clientResp as Record<string, unknown>;
       const choices = resp.choices as unknown[] | undefined;
@@ -576,6 +578,9 @@ async function handleRequest(
         if (message?.content) {
           responseContent = String(message.content);
         }
+        if (message?.reasoning_content) {
+          reasoningContent = String(message.reasoning_content);
+        }
       }
       const content = resp.content as unknown[] | undefined;
       if (content && content.length > 0) {
@@ -584,10 +589,15 @@ async function handleRequest(
           responseContent = String(firstContent.text);
         }
       }
+      // Check for reasoning_content at response level (Responses API format)
+      if (resp.reasoning_content) {
+        reasoningContent = String(resp.reasoning_content);
+      }
     }
     updateRequest(requestId, { 
       status: 'completed', 
       content: responseContent,
+      reasoningContent: reasoningContent || undefined,
       endTime: Date.now() 
     });
     cleanupOldRequests();
@@ -779,6 +789,7 @@ async function createStreamingResponse(
   let finalStopReason: string | null = null;
   let streamAborted = false;
   let fullContent = "";
+  let fullReasoningContent = "";
   // Track Anthropic content block state for proper block lifecycle
   let currentContentBlockIndex = 0;
   let currentContentBlockType: "text" | "tool_use" | null = isAnthropicSource ? "text" : null;
@@ -837,7 +848,15 @@ async function createStreamingResponse(
             if (chunk.usage) outputTokens = chunk.usage.completionTokens;
             // Extract content for monitoring
             if (chunk.delta?.text) {
-              fullContent += chunk.delta.text;
+              // Safety: don't add to content if it's the same as reasoning content
+              // (some providers may duplicate reasoning in both fields)
+              if (chunk.delta.text !== chunk.reasoningContent) {
+                fullContent += chunk.delta.text;
+              }
+            }
+            // Extract reasoning content for monitoring (e.g., from DeepSeek)
+            if (chunk.reasoningContent) {
+              fullReasoningContent += chunk.reasoningContent;
             }
 
             // For Anthropic source: handle content block transitions (text → tool_use)
@@ -863,9 +882,12 @@ async function createStreamingResponse(
 
             const outputLine = transformers.toProviderStreamChunk(sourceFormat, chunk, model);
             await writer.write(encoder.encode(outputLine));
-            // Update monitoring
+            // Update monitoring - only update content fields if they have data
             if (requestId) {
-              updateRequest(requestId, { content: fullContent, chunks: chunkIndex });
+              const updates: Partial<ActiveRequest> = { chunks: chunkIndex };
+              if (fullContent) updates.content = fullContent;
+              if (fullReasoningContent) updates.reasoningContent = fullReasoningContent;
+              updateRequest(requestId, updates);
             }
           }
         }
@@ -899,9 +921,15 @@ async function createStreamingResponse(
       logEntry.durationMs = Date.now() - startTime;
       state.logging.log(logEntry).catch(console.error);
       
-      // Mark as completed
+      // Mark as completed - include final content
       if (requestId) {
-        updateRequest(requestId, { status: 'completed', endTime: Date.now() });
+        const updates: Partial<ActiveRequest> = { 
+          status: 'completed', 
+          endTime: Date.now() 
+        };
+        if (fullContent) updates.content = fullContent;
+        if (fullReasoningContent) updates.reasoningContent = fullReasoningContent;
+        updateRequest(requestId, updates);
         cleanupOldRequests();
       }
     } catch (error) {
@@ -944,7 +972,12 @@ async function createStreamingResponse(
       // Update request tracking
       if (requestId) {
         if (isClientDisconnect) {
-          updateRequest(requestId, { status: 'completed', content: fullContent, endTime: Date.now() });
+          updateRequest(requestId, { 
+            status: 'completed', 
+            content: fullContent, 
+            reasoningContent: fullReasoningContent || undefined,
+            endTime: Date.now() 
+          });
         } else {
           updateRequest(requestId, { status: 'error', error: errorMessage, endTime: Date.now() });
         }
