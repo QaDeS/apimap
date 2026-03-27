@@ -31,15 +31,37 @@
   let temperature = $state(0.7);
   let maxTokens = $state(1024);
   let stream = $state(false);
-  let apiFormat = $state<'openai' | 'anthropic'>('openai');
+  type ApiFormat = 'openai' | 'anthropic' | 'openai-responses' | 'openai-completions';
+  let apiFormat = $state<ApiFormat>('openai');
   let showAdvanced = $state(false);
   let enableThinking = $state(true);
   
-  // API format determines the endpoint automatically
-  function getEndpointInfo(format: 'openai' | 'anthropic') {
-    return format === 'anthropic' 
-      ? { path: '/v1/messages', name: 'Anthropic Messages API' }
-      : { path: '/v1/chat/completions', name: 'OpenAI Chat Completions API' };
+  // API format options with their endpoints
+  const API_FORMATS: Record<ApiFormat, { path: string; name: string; description: string }> = {
+    'openai': { 
+      path: '/v1/chat/completions', 
+      name: 'OpenAI Chat Completions',
+      description: 'Standard OpenAI chat format'
+    },
+    'anthropic': { 
+      path: '/v1/messages', 
+      name: 'Anthropic Messages',
+      description: 'Claude Messages API format'
+    },
+    'openai-responses': { 
+      path: '/v1/responses', 
+      name: 'OpenAI Responses',
+      description: 'OpenAI Responses API (newer)'
+    },
+    'openai-completions': { 
+      path: '/v1/completions', 
+      name: 'OpenAI Completions',
+      description: 'Legacy text completions'
+    },
+  };
+  
+  function getEndpointInfo(format: ApiFormat) {
+    return API_FORMATS[format];
   }
   
   // Response state
@@ -180,17 +202,44 @@
                       // Ignore parse errors
                     }
                   }
-                } else {
-                  // OpenAI streaming format
+                } else if (apiFormat === 'openai-completions') {
+                  // Legacy OpenAI completions streaming format
                   if (line.startsWith('data: ')) {
                     const data = line.slice(6);
                     if (data === '[DONE]') continue;
                     
                     try {
                       const parsed = JSON.parse(data);
+                      const text = parsed.choices?.[0]?.text;
+                      if (text) {
+                        fullContent += text;
+                        streamingContent = fullContent;
+                      }
+                      if (parsed.choices?.[0]?.finish_reason) {
+                        finishReason = parsed.choices[0].finish_reason;
+                      }
+                      if (parsed.usage) {
+                        usageData = parsed.usage;
+                      }
+                    } catch {
+                      // Ignore parse errors
+                    }
+                  }
+                } else {
+                  // OpenAI chat completions and responses streaming format
+                  if (line.startsWith('data: ')) {
+                    const data = line.slice(6);
+                    if (data === '[DONE]') continue;
+                    
+                    try {
+                      const parsed = JSON.parse(data);
+                      // Try multiple content locations for different response formats
                       const delta = parsed.choices?.[0]?.delta;
-                      if (delta?.content) {
-                        fullContent += delta.content;
+                      const content = delta?.content || 
+                                     parsed.output?.[0]?.content?.[0]?.text ||
+                                     parsed.delta?.text;
+                      if (content) {
+                        fullContent += content;
                         streamingContent = fullContent;
                       }
                       if (delta?.reasoning_content) {
@@ -247,8 +296,40 @@
               total_tokens: (data.usage.input_tokens || 0) + (data.usage.output_tokens || 0),
             } : undefined,
           };
+        } else if (apiFormat === 'openai-completions') {
+          // Legacy OpenAI completions format
+          const content = data.choices?.[0]?.text || '';
+          response = {
+            success: true,
+            content,
+            provider: 'router',
+            targetModel: data.model,
+            duration,
+            usage: data.usage ? {
+              prompt_tokens: data.usage.prompt_tokens || 0,
+              completion_tokens: data.usage.completion_tokens || 0,
+              total_tokens: data.usage.total_tokens || 0,
+            } : undefined,
+          };
+        } else if (apiFormat === 'openai-responses') {
+          // OpenAI responses format
+          const content = data.output?.[0]?.content?.[0]?.text || 
+                         data.output_text || 
+                         data.choices?.[0]?.message?.content || '';
+          response = {
+            success: true,
+            content,
+            provider: 'router',
+            targetModel: data.model,
+            duration,
+            usage: data.usage ? {
+              prompt_tokens: data.usage.input_tokens || data.usage.prompt_tokens || 0,
+              completion_tokens: data.usage.output_tokens || data.usage.completion_tokens || 0,
+              total_tokens: data.usage.total_tokens || 0,
+            } : undefined,
+          };
         } else {
-          // OpenAI format
+          // OpenAI chat completions format
           const message = data.choices?.[0]?.message;
           const content = message?.content || '';
           const reasoningContent = message?.reasoning_content;
@@ -535,30 +616,17 @@
                 <span class="block text-sm font-medium text-gray-700 mb-1.5">
                   API Format
                 </span>
-                <div class="flex rounded-lg border border-gray-300 overflow-hidden">
-                  <button
-                    onclick={() => apiFormat = 'openai'}
-                    class="flex-1 py-2 text-sm font-medium transition-colors"
-                    class:bg-blue-600={apiFormat === 'openai'}
-                    class:text-white={apiFormat === 'openai'}
-                    class:bg-white={apiFormat !== 'openai'}
-                    class:text-gray-700={apiFormat !== 'openai'}
-                    class:hover:bg-gray-50={apiFormat !== 'openai'}
-                  >
-                    OpenAI
-                  </button>
-                  <button
-                    onclick={() => apiFormat = 'anthropic'}
-                    class="flex-1 py-2 text-sm font-medium transition-colors"
-                    class:bg-blue-600={apiFormat === 'anthropic'}
-                    class:text-white={apiFormat === 'anthropic'}
-                    class:bg-white={apiFormat !== 'anthropic'}
-                    class:text-gray-700={apiFormat !== 'anthropic'}
-                    class:hover:bg-gray-50={apiFormat !== 'anthropic'}
-                  >
-                    Anthropic
-                  </button>
-                </div>
+                <select
+                  bind:value={apiFormat}
+                  class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
+                >
+                  {#each Object.entries(API_FORMATS) as [key, info]}
+                    <option value={key}>{info.name}</option>
+                  {/each}
+                </select>
+                <p class="text-xs text-gray-500 mt-1">
+                  {API_FORMATS[apiFormat].description}
+                </p>
               </div>
 
               <!-- Stream Toggle -->

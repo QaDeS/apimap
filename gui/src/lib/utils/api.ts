@@ -341,26 +341,67 @@ export const testModelApi = {
     temperature?: number;
     maxTokens?: number;
     stream?: boolean;
-    apiFormat?: 'openai' | 'anthropic';
+    apiFormat?: 'openai' | 'anthropic' | 'openai-responses' | 'openai-completions';
     chatTemplateKwargs?: Record<string, unknown>;
   }) => {
     const apiUrl = serverInfoApi.getApiUrl();
-    const isAnthropic = params.apiFormat === 'anthropic';
-    const endpoint = isAnthropic ? '/v1/messages' : '/v1/chat/completions';
+    const format = params.apiFormat ?? 'openai';
     
-    const messages = [];
-    if (params.systemMessage?.trim()) {
-      messages.push({ role: 'system', content: params.systemMessage.trim() });
-    }
-    messages.push({ role: 'user', content: params.message.trim() });
+    // Map API format to endpoint
+    const ENDPOINT_MAP: Record<string, string> = {
+      'openai': '/v1/chat/completions',
+      'anthropic': '/v1/messages',
+      'openai-responses': '/v1/responses',
+      'openai-completions': '/v1/completions',
+    };
+    const endpoint = ENDPOINT_MAP[format] ?? '/v1/chat/completions';
     
     const requestBody: Record<string, unknown> = {
       model: params.model.trim(),
-      messages,
       max_tokens: params.maxTokens ?? 1024,
       temperature: params.temperature ?? 0.7,
       stream: params.stream ?? false,
     };
+    
+    // Format-specific request body construction
+    if (format === 'anthropic') {
+      // Anthropic Messages API format
+      const messages = [];
+      messages.push({ role: 'user', content: params.message.trim() });
+      requestBody.messages = messages;
+      // System message goes in separate field for Anthropic
+      if (params.systemMessage?.trim()) {
+        requestBody.system = params.systemMessage.trim();
+      }
+    } else if (format === 'openai-completions') {
+      // Legacy completions format uses 'prompt' instead of 'messages'
+      let prompt = '';
+      if (params.systemMessage?.trim()) {
+        prompt += params.systemMessage.trim() + '\n\n';
+      }
+      prompt += params.message.trim();
+      requestBody.prompt = prompt;
+      // Remove messages field for completions
+      delete requestBody.messages;
+    } else if (format === 'openai-responses') {
+      // OpenAI Responses API format
+      const input = [];
+      if (params.systemMessage?.trim()) {
+        input.push({ role: 'system', content: params.systemMessage.trim() });
+      }
+      input.push({ role: 'user', content: params.message.trim() });
+      requestBody.input = input;
+      // Remove messages field for responses API
+      delete requestBody.messages;
+    } else {
+      // Standard OpenAI Chat Completions format
+      const messages = [];
+      if (params.systemMessage?.trim()) {
+        messages.push({ role: 'system', content: params.systemMessage.trim() });
+      }
+      messages.push({ role: 'user', content: params.message.trim() });
+      requestBody.messages = messages;
+    }
     
     // Add chat_template_kwargs if provided
     if (params.chatTemplateKwargs && Object.keys(params.chatTemplateKwargs).length > 0) {
