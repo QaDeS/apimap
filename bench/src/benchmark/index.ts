@@ -219,15 +219,8 @@ class DockerComposeManager {
       MOCK_INSTANT_MODE: this.config.latencyMeanMs === 0 && this.config.latencyStdMs === 0 ? 'true' : 'false',
     };
 
-    // Start services (excluding benchmark and visualize profiles)
-    // Note: Using -d without --wait for compatibility with podman-compose
-    const proc = Bun.spawn(['docker', 'compose', 'up', '-d', 'mock-server', 'litellm', 'apimap'], {
-      env,
-      stdout: 'inherit',
-      stderr: 'inherit',
-    });
-
-    const exitCode = await proc.exited;
+    // Try docker-compose first (works with podman-compose without daemon), then docker compose
+    const exitCode = await this.tryComposeUp(env);
     if (exitCode !== 0) {
       throw new Error(`docker compose up failed with exit code ${exitCode}`);
     }
@@ -238,6 +231,26 @@ class DockerComposeManager {
     // Wait for health checks to pass
     console.log('  Waiting for health checks...');
     await this.waitForServices();
+  }
+
+  private async tryComposeUp(env: NodeJS.ProcessEnv): Promise<number> {
+    // Try docker-compose first (podman-compose standalone works without daemon)
+    const proc1 = Bun.spawn(['docker-compose', 'up', '-d', 'mock-server', 'litellm', 'apimap'], {
+      env,
+      stdout: 'inherit',
+      stderr: 'pipe',
+    });
+    const exitCode1 = await proc1.exited;
+    if (exitCode1 === 0) return 0;
+    
+    // Fall back to docker compose (Docker Compose plugin)
+    console.log('  docker-compose failed, trying docker compose...');
+    const proc2 = Bun.spawn(['docker', 'compose', 'up', '-d', 'mock-server', 'litellm', 'apimap'], {
+      env,
+      stdout: 'inherit',
+      stderr: 'inherit',
+    });
+    return await proc2.exited;
   }
 
   private async waitForServices(): Promise<void> {
@@ -278,10 +291,19 @@ class DockerComposeManager {
     if (!this.isRunning) return;
     
     console.log('\n🛑 Stopping services...');
-    const proc = Bun.spawnSync(['docker', 'compose', 'down', '-v'], {
+    
+    // Try docker-compose first, then docker compose
+    let proc = Bun.spawnSync(['docker-compose', 'down', '-v'], {
       stdout: 'inherit',
-      stderr: 'inherit',
+      stderr: 'pipe',
     });
+    
+    if (proc.exitCode !== 0) {
+      proc = Bun.spawnSync(['docker', 'compose', 'down', '-v'], {
+        stdout: 'inherit',
+        stderr: 'inherit',
+      });
+    }
     
     if (proc.exitCode === 0) {
       console.log('  ✅ Services stopped');
