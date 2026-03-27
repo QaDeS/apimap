@@ -515,6 +515,429 @@ const sampleResponses = {
 };
 
 // ============================================================================
+// OpenAI Responses API Support
+// ============================================================================
+
+interface OpenAIResponsesInputItem {
+  role?: string;
+  content?: string | unknown[];
+  type?: string;
+}
+
+function validateOpenAIResponsesRequest(body: Record<string, unknown>): ValidationResult {
+  const result = new ValidationResult();
+  
+  if (!body.model) {
+    result.addError('model', 'model is required');
+  } else if (typeof body.model !== 'string') {
+    result.addError('model', 'model must be a string', body.model);
+  }
+  
+  if (!body.input) {
+    result.addError('input', 'input is required');
+  } else if (typeof body.input !== 'string' && !Array.isArray(body.input)) {
+    result.addError('input', 'input must be a string or array', body.input);
+  }
+  
+  if (body.temperature !== undefined) {
+    const temp = Number(body.temperature);
+    if (isNaN(temp) || temp < 0 || temp > 2) {
+      result.addError('temperature', 'temperature must be between 0 and 2', body.temperature);
+    }
+  }
+  
+  if (body.max_tokens !== undefined) {
+    const maxTokens = Number(body.max_tokens);
+    if (isNaN(maxTokens) || maxTokens < 1) {
+      result.addError('max_tokens', 'max_tokens must be a positive integer', body.max_tokens);
+    }
+  }
+  
+  if (body.reasoning) {
+    const reasoning = body.reasoning as Record<string, unknown>;
+    if (reasoning.effort && !['low', 'medium', 'high'].includes(reasoning.effort as string)) {
+      result.addError('reasoning.effort', 'effort must be low, medium, or high', reasoning.effort);
+    }
+  }
+  
+  return result;
+}
+
+function countInputTokens(input: string | OpenAIResponsesInputItem[]): number {
+  if (typeof input === 'string') {
+    return countTokens(input);
+  }
+  let total = 0;
+  for (const item of input) {
+    if (typeof item.content === 'string') {
+      total += countTokens(item.content);
+    } else if (Array.isArray(item.content)) {
+      for (const block of item.content) {
+        if (typeof block === 'object' && block !== null && 'text' in block) {
+          total += countTokens(String(block.text));
+        }
+      }
+    }
+  }
+  return total;
+}
+
+function generateOpenAIResponsesResponse(
+  model: string,
+  input: string | OpenAIResponsesInputItem[],
+  maxTokens: number,
+  includeReasoning?: boolean
+): {
+  id: string;
+  object: 'response';
+  created_at: number;
+  model: string;
+  output: Array<{
+    type: 'message';
+    id: string;
+    status: 'completed';
+    role: 'assistant';
+    content: Array<{ type: 'output_text'; text: string }>;
+  }>;
+  output_text?: string;
+  reasoning?: { effort: string; generate_summary?: boolean };
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+  };
+} {
+  const responses = sampleResponses.openai;
+  const responseText = responses[Math.floor(Math.random() * responses.length)];
+  const truncatedResponse = responseText.split(' ').slice(0, maxTokens).join(' ');
+  const inputTokens = countInputTokens(input);
+  const outputTokens = countTokens(truncatedResponse);
+  
+  const result: {
+    id: string;
+    object: 'response';
+    created_at: number;
+    model: string;
+    output: Array<{
+      type: 'message';
+      id: string;
+      status: 'completed';
+      role: 'assistant';
+      content: Array<{ type: 'output_text'; text: string }>;
+    }>;
+    output_text?: string;
+    reasoning?: { effort: string; generate_summary?: boolean };
+    usage: {
+      input_tokens: number;
+      output_tokens: number;
+      total_tokens: number;
+    };
+  } = {
+    id: `resp_${generateId()}`,
+    object: 'response',
+    created_at: Math.floor(Date.now() / 1000),
+    model,
+    output: [{
+      type: 'message',
+      id: `msg_${generateId()}`,
+      status: 'completed',
+      role: 'assistant',
+      content: [{
+        type: 'output_text',
+        text: truncatedResponse,
+      }],
+    }],
+    output_text: truncatedResponse,
+    usage: {
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      total_tokens: inputTokens + outputTokens,
+    },
+  };
+  
+  if (includeReasoning) {
+    result.reasoning = { effort: 'medium', generate_summary: false };
+  }
+  
+  return result;
+}
+
+async function* openAIResponsesStreamGenerator(
+  model: string,
+  input: string | OpenAIResponsesInputItem[],
+  maxTokens: number,
+  includeReasoning?: boolean
+): AsyncGenerator<string> {
+  const responses = sampleResponses.openai;
+  const responseText = responses[Math.floor(Math.random() * responses.length)];
+  const truncatedResponse = responseText.split(' ').slice(0, maxTokens).join(' ');
+  const words = truncatedResponse.split(' ');
+  const responseId = `resp_${generateId()}`;
+  const messageId = `msg_${generateId()}`;
+  const timestamp = Math.floor(Date.now() / 1000);
+  const newline = '\n';
+  
+  // Initial response.created event
+  yield `data: ${JSON.stringify({
+    type: 'response.created',
+    response: {
+      id: responseId,
+      object: 'response',
+      created_at: timestamp,
+      model,
+      output: [],
+      status: 'in_progress',
+    },
+  })}${newline}${newline}`;
+  
+  // Output item added
+  yield `data: ${JSON.stringify({
+    type: 'response.output_item.added',
+    output_index: 0,
+    item: {
+      type: 'message',
+      id: messageId,
+      status: 'in_progress',
+      role: 'assistant',
+    },
+  })}${newline}${newline}`;
+  
+  // Content part added
+  yield `data: ${JSON.stringify({
+    type: 'response.content_part.added',
+    item_id: messageId,
+    output_index: 0,
+    content_index: 0,
+    part: { type: 'output_text', text: '' },
+  })}${newline}${newline}`;
+  
+  // Stream words
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    const prefix = i > 0 ? ' ' : '';
+    
+    yield `data: ${JSON.stringify({
+      type: 'response.output_text.delta',
+      item_id: messageId,
+      output_index: 0,
+      content_index: 0,
+      delta: prefix + word,
+    })}${newline}${newline}`;
+    
+    await sleep((1 / config.tokensPerSecond) * 1000);
+  }
+  
+  // Content part done
+  yield `data: ${JSON.stringify({
+    type: 'response.content_part.done',
+    item_id: messageId,
+    output_index: 0,
+    content_index: 0,
+    part: { type: 'output_text', text: truncatedResponse },
+  })}${newline}${newline}`;
+  
+  // Output item done
+  yield `data: ${JSON.stringify({
+    type: 'response.output_item.done',
+    output_index: 0,
+    item: {
+      type: 'message',
+      id: messageId,
+      status: 'completed',
+      role: 'assistant',
+      content: [{ type: 'output_text', text: truncatedResponse }],
+    },
+  })}${newline}${newline}`;
+  
+  // Response completed
+  const inputTokens = countInputTokens(input);
+  const outputTokens = countTokens(truncatedResponse);
+  
+  yield `data: ${JSON.stringify({
+    type: 'response.completed',
+    response: {
+      id: responseId,
+      object: 'response',
+      created_at: timestamp,
+      model,
+      output: [{
+        type: 'message',
+        id: messageId,
+        status: 'completed',
+        role: 'assistant',
+        content: [{ type: 'output_text', text: truncatedResponse }],
+      }],
+      output_text: truncatedResponse,
+      status: 'completed',
+      usage: {
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        total_tokens: inputTokens + outputTokens,
+      },
+    },
+  })}${newline}${newline}`;
+  
+  yield `data: [DONE]${newline}${newline}`;
+}
+
+async function handleOpenAIResponsesRequest(
+  body: Record<string, unknown>,
+  request: Request,
+  startTime: number
+): Promise<Response> {
+  const requestId = generateRequestId();
+  const provider = 'openai-responses';
+  
+  try {
+    if (config.strictValidation) {
+      const validation = validateOpenAIResponsesRequest(body);
+      if (!validation.isValid()) {
+        requestLogger.logError({
+          timestamp: new Date().toISOString(),
+          requestId,
+          method: 'POST',
+          path: '/v1/responses',
+          provider,
+          error: 'Validation failed',
+          context: { errors: validation.errors },
+        });
+        
+        requestLogger.logRequest({
+          timestamp: new Date().toISOString(),
+          method: 'POST',
+          path: '/v1/responses',
+          provider,
+          requestId,
+          durationMs: performance.now() - startTime,
+          statusCode: 400,
+          error: 'Validation failed',
+        });
+        
+        return new Response(JSON.stringify(validation.toResponse()), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId },
+        });
+      }
+    }
+    
+    if (shouldError()) {
+      const error = 'Simulated LLM error';
+      requestLogger.logError({
+        timestamp: new Date().toISOString(),
+        requestId,
+        method: 'POST',
+        path: '/v1/responses',
+        provider,
+        error,
+        context: { model: body.model, simulated: true },
+      });
+      
+      requestLogger.logRequest({
+        timestamp: new Date().toISOString(),
+        method: 'POST',
+        path: '/v1/responses',
+        provider,
+        requestId,
+        durationMs: performance.now() - startTime,
+        statusCode: 500,
+        error,
+      });
+      
+      return new Response(JSON.stringify({ error, requestId }), {
+        status: 500,
+        headers: { 'X-Request-Id': requestId },
+      });
+    }
+    
+    const input = body.input as string | OpenAIResponsesInputItem[];
+    const maxTokens = Number(body.max_tokens) || 50;
+    const stream = body.stream === true;
+    const reasoning = body.reasoning as { effort?: string } | undefined;
+    const includeReasoning = reasoning?.effort !== undefined;
+    
+    const inputTokens = countInputTokens(input);
+    const latency = calculateLatency(inputTokens, maxTokens);
+    await sleep(latency);
+    
+    if (stream && config.streamingEnabled) {
+      const generator = openAIResponsesStreamGenerator(
+        body.model as string,
+        input,
+        maxTokens,
+        includeReasoning
+      );
+      
+      requestLogger.logRequest({
+        timestamp: new Date().toISOString(),
+        method: 'POST',
+        path: '/v1/responses',
+        provider,
+        requestId,
+        durationMs: performance.now() - startTime,
+        statusCode: 200,
+        inputTokens,
+      });
+      
+      const streamResponse = new ReadableStream({
+        async pull(controller) {
+          const result = await generator.next();
+          if (result.done) {
+            controller.close();
+          } else {
+            controller.enqueue(new TextEncoder().encode(result.value));
+          }
+        },
+      });
+      
+      return new Response(streamResponse, {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+          'X-Request-Id': requestId,
+        },
+      });
+    }
+    
+    const response = generateOpenAIResponsesResponse(
+      body.model as string,
+      input,
+      maxTokens,
+      includeReasoning
+    );
+    
+    requestLogger.logRequest({
+      timestamp: new Date().toISOString(),
+      method: 'POST',
+      path: '/v1/responses',
+      provider,
+      requestId,
+      durationMs: performance.now() - startTime,
+      statusCode: 200,
+      inputTokens,
+      outputTokens: response.usage.output_tokens,
+    });
+    
+    return new Response(JSON.stringify(response), {
+      headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId },
+    });
+    
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    requestLogger.logError({
+      timestamp: new Date().toISOString(),
+      requestId,
+      method: 'POST',
+      path: '/v1/responses',
+      provider,
+      error: errorMessage,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    throw error;
+  }
+}
+
+// ============================================================================
 // Response Generators
 // ============================================================================
 
@@ -732,20 +1155,19 @@ async function* openAIStreamGenerator(
   for (let i = 0; i < words.length; i++) {
     const word = words[i];
     const prefix = i > 0 ? ' ' : '';
-    const chunk: Record<string, unknown> = {
-      id: generateId(),
-      object: 'chat.completion.chunk',
-      created: Math.floor(Date.now() / 1000),
-      model,
-      choices: [{
-        index: 0,
-        delta: { content: prefix + word },
-        finish_reason: null,
-      }],
+    const choice: {
+      index: number;
+      delta: { content: string };
+      finish_reason: null;
+      logprobs?: unknown;
+    } = {
+      index: 0,
+      delta: { content: prefix + word },
+      finish_reason: null,
     };
     
     if (includeLogprobs) {
-      chunk.choices[0].logprobs = {
+      choice.logprobs = {
         content: [{
           token: word,
           logprob: -0.5 - Math.random(),
@@ -753,6 +1175,14 @@ async function* openAIStreamGenerator(
         }],
       };
     }
+    
+    const chunk = {
+      id: generateId(),
+      object: 'chat.completion.chunk' as const,
+      created: Math.floor(Date.now() / 1000),
+      model,
+      choices: [choice],
+    };
     
     yield `data: ${JSON.stringify(chunk)}\n\n`;
     await sleep((1 / config.tokensPerSecond) * 1000);
@@ -1238,6 +1668,7 @@ const app = new Elysia()
     },
     endpoints: {
       openai: '/v1/chat/completions',
+      'openai-responses': '/v1/responses',
       anthropic: '/v1/messages',
       deepseek: '/deepseek/v1/chat/completions',
       generic: '/generic/v1/chat/completions',
@@ -1300,6 +1731,32 @@ const app = new Elysia()
     }),
   })
 
+  // OpenAI Responses API endpoint
+  .post('/v1/responses', async ({ body, request }) => {
+    const startTime = (request as Request & { _startTime?: number })._startTime || performance.now();
+    return handleOpenAIResponsesRequest(body as Record<string, unknown>, request, startTime);
+  }, {
+    body: t.Object({
+      model: t.String(),
+      input: t.Union([t.String(), t.Array(t.Record(t.String(), t.Unknown()))]),
+      instructions: t.Optional(t.String()),
+      stream: t.Optional(t.Boolean()),
+      max_tokens: t.Optional(t.Number()),
+      temperature: t.Optional(t.Number()),
+      top_p: t.Optional(t.Number()),
+      stop: t.Optional(t.Union([t.String(), t.Array(t.String())])),
+      tools: t.Optional(t.Array(t.Record(t.String(), t.Unknown()))),
+      tool_choice: t.Optional(t.Union([t.String(), t.Record(t.String(), t.Unknown())])),
+      parallel_tool_calls: t.Optional(t.Boolean()),
+      previous_response_id: t.Optional(t.String()),
+      reasoning: t.Optional(t.Record(t.String(), t.Unknown())),
+      response_format: t.Optional(t.Record(t.String(), t.Unknown())),
+      user: t.Optional(t.String()),
+      metadata: t.Optional(t.Record(t.String(), t.String())),
+      store: t.Optional(t.Boolean()),
+    }),
+  })
+
   // Anthropic endpoint
   .post('/v1/messages', async ({ body, request }) => {
     const startTime = (request as Request & { _startTime?: number })._startTime || performance.now();
@@ -1341,6 +1798,7 @@ const app = new Elysia()
       info: '/info',
       models: '/v1/models',
       openai: '/v1/chat/completions',
+      'openai-responses': '/v1/responses',
       anthropic: '/v1/messages',
       deepseek: '/deepseek/v1/chat/completions',
       generic: '/generic/v1/chat/completions',
@@ -1384,10 +1842,11 @@ console.log(`   Health: http://${config.host}:${config.port}/health`);
 console.log(`   Info: http://${config.host}:${config.port}/info`);
 console.log('');
 console.log('All Endpoints Active:');
-console.log(`   OpenAI:     POST http://${config.host}:${config.port}/v1/chat/completions`);
-console.log(`   Anthropic:  POST http://${config.host}:${config.port}/v1/messages`);
-console.log(`   DeepSeek:   POST http://${config.host}:${config.port}/deepseek/v1/chat/completions`);
-console.log(`   Generic:    POST http://${config.host}:${config.port}/generic/v1/chat/completions`);
+console.log(`   OpenAI:           POST http://${config.host}:${config.port}/v1/chat/completions`);
+console.log(`   OpenAI Responses: POST http://${config.host}:${config.port}/v1/responses`);
+console.log(`   Anthropic:        POST http://${config.host}:${config.port}/v1/messages`);
+console.log(`   DeepSeek:         POST http://${config.host}:${config.port}/deepseek/v1/chat/completions`);
+console.log(`   Generic:          POST http://${config.host}:${config.port}/generic/v1/chat/completions`);
 console.log('');
 console.log('Environment Variables:');
 console.log(`  MOCK_STRICT_VALIDATION=true|false (current: ${config.strictValidation})`);

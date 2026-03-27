@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/qades/apimap/actions/workflows/ci.yml/badge.svg)](https://github.com/qades/apimap/actions/workflows/ci.yml)
 [![Benchmark](https://github.com/qades/apimap/actions/workflows/benchmark.yml/badge.svg)](https://github.com/qades/apimap/actions/workflows/benchmark.yml)
+[![Benchmark Results](https://img.shields.io/badge/benchmark-results-green?logo=github)](https://qades.github.io/apimap/)
+[![Feature Matrix](https://img.shields.io/badge/features-vs%20LiteLLM-blue)](./FEATURE_MATRIX.md)
 [![Docker Image](https://img.shields.io/badge/docker-ghcr.io%2Fqades%2Fapimap-blue?logo=docker)](https://ghcr.io/qades/apimap)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 

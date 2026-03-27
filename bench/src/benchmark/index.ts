@@ -304,19 +304,19 @@ const DEFAULT_CONFIG: BenchmarkConfig = {
   targets: [
     {
       name: 'LiteLLM',
-      url: 'http://localhost:4000',
-      apiKey: 'sk-test-key',
+      url: Bun.env.LITELLM_URL || 'http://localhost:4000',
+      apiKey: Bun.env.LITELLM_API_KEY || 'sk-test-key',
       enabled: true,
     },
     {
       name: 'API Map',
-      url: 'http://localhost:3000',
-      apiKey: 'test-key',
+      url: Bun.env.APIMAP_URL || 'http://localhost:3000',
+      apiKey: Bun.env.APIMAP_API_KEY || 'test-key',
       enabled: true,
     },
     {
       name: 'Direct',
-      url: 'http://localhost:9999',
+      url: Bun.env.MOCK_SERVER_URL || 'http://localhost:9999',
       apiKey: 'test-key',
       enabled: true,
     },
@@ -1420,6 +1420,8 @@ async function main() {
         const stats = analyzeLatencies(latencyResult.latencies);
         if (stats) {
           console.log(`    Latency: Mean=${stats.mean.toFixed(1)}ms, P95=${stats.p95.toFixed(1)}ms`);
+        } else if (latencyResult.errors > 0) {
+          console.log(`    Latency: ${latencyResult.errors}/${latencyResult.total} requests failed`);
         }
         
         // Throughput test (concurrent)

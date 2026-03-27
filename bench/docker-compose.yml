@@ -4,12 +4,15 @@
 # 1. Mock LLM Server - Bun + Elysia (lightning fast)
 # 2. LiteLLM Proxy - AI gateway with 100+ provider support
 # 3. API Map - Universal model router (BUILT FROM LOCAL SOURCE)
-# 4. Benchmark Runner - Bun-based high-performance testing
 #
-# Usage:
-#   ./run.sh quick      # Quick benchmark (recommended)
-#   ./run.sh full       # Full benchmark suite
-#   ./run.sh clean      # Clean up
+# Usage (from project root):
+#   bun run bench        # Quick benchmark (recommended)
+#   bun run bench:full   # Full benchmark suite
+#
+# Or manual control:
+#   docker-compose up -d mock-server litellm apimap
+#   cd bench && bun run src/benchmark/index.ts
+#   docker-compose down
 #
 # Environment Variables:
 #   APIMAP_IMAGE - Override with specific image (default: build from source)
@@ -154,6 +157,8 @@ services:
       - BENCHMARK_MAX_TOKENS=${BENCHMARK_MAX_TOKENS:-50}
       - WAIT_FOR_SERVICES=true
     depends_on:
+      mock-server:
+        condition: service_healthy
       litellm:
         condition: service_healthy
       apimap:
