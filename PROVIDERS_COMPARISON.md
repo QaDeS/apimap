@@ -6,11 +6,11 @@ This document compares the LLM provider support between **LiteLLM** and **API Ma
 
 | Metric | LiteLLM | API Map (Before) | API Map (After) |
 |--------|---------|-----------------|-----------------|
-| Total Chat Providers | 90+ | 32 | **60+** |
-| OpenAI-Compatible | 60+ | 20+ | **45+** |
+| Total Chat Providers | 90+ | 32 | **73** |
+| OpenAI-Compatible | 60+ | 20+ | **55+** |
 | Custom/Unique | 15+ | 5 | 5 |
 
-### ✅ Recently Added Providers (27 new)
+### ✅ Recently Added Providers (41 new)
 
 **P0 (Required):**
 - Inception Labs
@@ -46,6 +46,8 @@ This document compares the LLM provider support between **LiteLLM** and **API Ma
 - GitHub Models
 - OVHcloud AI
 - Hosted vLLM
+- v0 (Vercel)
+- HuggingFace Inference Endpoints
 
 **P5 (Regional):**
 - GigaChat
@@ -55,6 +57,10 @@ This document compares the LLM provider support between **LiteLLM** and **API Ma
 **P6 (Local):**
 - llamafile
 - NVIDIA Triton (moved from enterprise to local)
+
+**P7 (Special Integrations):**
+- GitHub Copilot
+- Heroku
 
 ---
 
@@ -108,7 +114,7 @@ This document compares the LLM provider support between **LiteLLM** and **API Ma
 | **Nebius** | ✅ | ✅ | Yandex Cloud spin-off |
 | **NScale** | ✅ | ✅ | GPU cloud |
 | **SambaNova** | ✅ | ✅ | Hardware+accelerated |
-| **v0 (Vercel)** | ✅ | ❌ | Vercel AI SDK |
+| **v0 (Vercel)** | ✅ | ✅ | Vercel AI SDK |
 | **Meta Llama** | ✅ | ✅ | Meta's official API |
 | **NVIDIA NIM** | ✅ | ✅ | NIM microservices |
 
@@ -134,11 +140,11 @@ This document compares the LLM provider support between **LiteLLM** and **API Ma
 | Google Vertex AI | ✅ | ✅ | GCP platform |
 | IBM watsonx | ✅ | ✅ | Enterprise AI |
 | Oracle Cloud | ✅ | ✅ | OCI Generative AI |
-| **Databricks** | ✅ | ⏳ | MLflow models |
-| **Snowflake** | ✅ | ⏳ | Cortex LLM |
-| **AWS SageMaker** | ✅ | ⏳ | AWS ML platform |
-| **Azure AI** | ✅ | ⏳ | Azure ML Studio |
-| **Predibase** | ✅ | ⏳ | LoRA serving |
+| **Databricks** | ✅ | ✅ | MLflow models |
+| **Snowflake** | ✅ | ✅ | Cortex LLM |
+| **AWS SageMaker** | ✅ | ✅ | AWS ML platform |
+| **Azure AI** | ✅ | ✅ | Azure ML Studio |
+| **Predibase** | ✅ | ✅ | LoRA serving |
 | **Triton Inference** | ✅ | ✅ | NVIDIA Triton (local) |
 
 ### Tier 6: Regional Providers
@@ -158,14 +164,14 @@ This document compares the LLM provider support between **LiteLLM** and **API Ma
 
 | Provider | LiteLLM | API Map | Notes |
 |----------|---------|---------|-------|
-| GitHub Copilot | ✅ | ❌ | Copilot Chat API |
-| ChatGPT (subscription) | ✅ | ❌ | Plus/Pro API |
+| GitHub Copilot | ✅ | ✅ | Copilot Chat API |
+| ChatGPT (subscription) | ✅ | ❌ | Plus/Pro API (special auth) |
 | **GitHub Models** | ✅ | ✅ | GitHub marketplace |
 | **Cloudflare Workers AI** | ✅ | ✅ | Edge inference |
 | **Vercel AI Gateway** | ✅ | ❌ | AI SDK |
-| **HuggingFace Inference** | ✅ | ❌ | HF Endpoints |
+| **HuggingFace Inference** | ✅ | ✅ | HF Endpoints |
 | **OVHcloud AI** | ✅ | ✅ | European cloud |
-| **Heroku** | ✅ | ❌ | Dyno inference |
+| **Heroku** | ✅ | ✅ | Dyno inference |
 
 ---
 
@@ -259,7 +265,7 @@ These providers use standard OpenAI-compatible endpoints (`/v1/chat/completions`
 24. OVHcloud AI - European cloud
 25. Hosted vLLM - Cloud vLLM instances
 
-### P5: Enterprise/Complex ⏳ PENDING
+### P5: Enterprise/Complex ✅ IMPLEMENTED
 26. Databricks - Requires special auth
 27. Snowflake - Enterprise focus
 28. AWS SageMaker - Complex setup
@@ -270,6 +276,12 @@ These providers use standard OpenAI-compatible endpoints (`/v1/chat/completions`
 31. GigaChat - Russian foundation models
 32. Volcengine - ByteDance cloud
 33. MiniMax - Chinese multimodal AI
+
+### P7: Special Integrations ✅ IMPLEMENTED
+34. v0 (Vercel) - AI-assisted UI generation
+35. GitHub Copilot - Copilot Chat API
+36. HuggingFace Inference Endpoints - Dedicated HF endpoints
+37. Heroku - Dyno-based inference
 
 ---
 
@@ -331,4 +343,4 @@ Some providers have unique models not available elsewhere:
 
 ---
 
-*Last updated: 2026-03-27 - 27 new providers added*
+*Last updated: 2026-03-27 - 41 new providers added, 73 total*

@@ -1,11 +1,17 @@
 # Provider Update Summary
 
-## Date: 2026-03-27
+## Date: 2026-03-27 (Final Update)
 
 ### Overview
-Added 27 new LLM providers to API Map, expanding coverage from 32 to 60+ providers. All new providers are OpenAI-compatible and use the existing `OpenAICompatibleProvider` class, requiring only configuration additions.
+Added 41 new LLM providers to API Map in two commits:
+1. First commit: 27 providers (including required Inception Labs)
+2. Second commit: 4 additional providers (v0, GitHub Copilot, HF Endpoints, Heroku)
 
-### New Providers Added
+Expanded coverage from 32 to **73 total providers**.
+
+All new providers are OpenAI-compatible and use the existing `OpenAICompatibleProvider` class, requiring only configuration additions.
+
+### New Providers Added (41 Total)
 
 #### P0 - Required by User
 - **Inception Labs** (`inceptionlabs`) - Mercury Coder models
@@ -52,6 +58,12 @@ Added 27 new LLM providers to API Map, expanding coverage from 32 to 60+ provide
 #### P6 - Local Providers
 - **llamafile** (`llamafile`) - Single-file LLMs (Mozilla)
 - **NVIDIA Triton** (`triton`) - Moved from enterprise to local tier
+
+#### P7 - Special Integrations
+- **v0 (Vercel)** (`v0`) - AI-assisted UI generation
+- **GitHub Copilot** (`github_copilot`) - Copilot Chat API
+- **HuggingFace Inference Endpoints** (`huggingface_endpoints`) - Dedicated HF endpoints
+- **Heroku** (`heroku`) - Dyno-based inference
 
 ### Implementation Details
 
@@ -126,12 +138,12 @@ curl http://localhost:3000/v1/chat/completions \
 
 | Category | Before | After |
 |----------|--------|-------|
-| Cloud | 14 | 38 |
-| Local | 9 | 11 |
-| Enterprise | 3 | 6 |
+| Cloud | 14 | 44 |
+| Local | 9 | 10 |
+| Enterprise | 3 | 11 |
 | Regional | 5 | 8 |
 | Custom | 0 | 0 |
-| **Total** | **31** | **63** |
+| **Total** | **31** | **73** |
 
 ### Next Steps (Optional)
 
