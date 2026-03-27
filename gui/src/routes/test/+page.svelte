@@ -20,7 +20,8 @@
     Copy,
     Check,
     Zap,
-    X
+    X,
+    Brain
   } from '@lucide/svelte';
 
   // State
@@ -32,6 +33,7 @@
   let stream = $state(false);
   let apiFormat = $state<'openai' | 'anthropic'>('openai');
   let showAdvanced = $state(false);
+  let enableThinking = $state(true);
   
   // API format determines the endpoint automatically
   function getEndpointInfo(format: 'openai' | 'anthropic') {
@@ -118,6 +120,7 @@
         maxTokens,
         stream,
         apiFormat,
+        chatTemplateKwargs: { enable_thinking: enableThinking },
       });
       
       const duration = Date.now() - startTime;
@@ -281,6 +284,7 @@
     systemMessage = '';
     temperature = 0.7;
     maxTokens = 1024;
+    enableThinking = true;
     response = null;
     streamingContent = '';
   }
@@ -373,10 +377,28 @@
 
       <!-- Message Input -->
       <div class="bg-white rounded-xl border border-gray-200 p-5">
-        <label class="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-          <User size={16} class="text-gray-400" />
-          Your Message
-        </label>
+        <div class="flex items-center justify-between mb-2">
+          <label class="block text-sm font-medium text-gray-700 flex items-center gap-2">
+            <User size={16} class="text-gray-400" />
+            Your Message
+          </label>
+          <!-- Thinking Toggle -->
+          <button
+            onclick={() => enableThinking = !enableThinking}
+            class="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border transition-colors"
+            class:border-purple-600={enableThinking}
+            class:bg-purple-50={enableThinking}
+            class:text-purple-700={enableThinking}
+            class:border-gray-300={!enableThinking}
+            class:bg-white={!enableThinking}
+            class:text-gray-600={!enableThinking}
+            class:hover:bg-gray-50={!enableThinking}
+            title={enableThinking ? "Thinking is enabled" : "Thinking is disabled"}
+          >
+            <Brain size={14} class={enableThinking ? "fill-current" : ""} />
+            {enableThinking ? 'Thinking On' : 'Thinking Off'}
+          </button>
+        </div>
         <div class="relative">
           <textarea
             bind:value={message}

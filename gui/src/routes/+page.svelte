@@ -1,32 +1,66 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { AlertTriangle, CheckCircle, Activity, Clock, Server, Route, Zap, Plus, X, Eye } from '@lucide/svelte';
+  import { AlertTriangle, CheckCircle, Activity, Clock, Server, Route, Zap, Plus, X, Eye, RefreshCw } from '@lucide/svelte';
   
   import { resolveApiUrl } from '$lib/utils/api';
   const API_URL = resolveApiUrl();
+
+  // Check if we're in dev mode (Vite env)
+  const isDev = import.meta.env.DEV;
 
   // Simple local state
   let status = $state<any>(null);
   let unrouted: any[] = $state([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
+  let apiUrl = $state<string>(API_URL);
+
+  // Fetch with timeout
+  async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 5000): Promise<Response> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      return response;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new Error(`Request timeout after ${timeoutMs}ms - API server not responding`);
+      }
+      throw err;
+    }
+  }
 
   async function loadData() {
+    console.log('Loading data from:', API_URL);
     try {
-      const res = await fetch(`${API_URL}/admin/status`);
-      if (!res.ok) throw new Error('Failed to load status');
+      const res = await fetchWithTimeout(`${API_URL}/admin/status`);
+      if (!res.ok) throw new Error(`Failed to load status: HTTP ${res.status}`);
       status = await res.json();
+      error = null; // Clear any previous error
       
-      const unroutedRes = await fetch(`${API_URL}/admin/unrouted`);
+      const unroutedRes = await fetchWithTimeout(`${API_URL}/admin/unrouted`);
       if (unroutedRes.ok) {
         const data = await unroutedRes.json();
         unrouted = data.unrouted;
       }
     } catch (err) {
+      console.error('Failed to load data:', err);
       error = err instanceof Error ? err.message : 'Unknown error';
     } finally {
       loading = false;
     }
+  }
+
+  function retry() {
+    loading = true;
+    error = null;
+    loadData();
   }
 
   onMount(() => {
@@ -43,10 +77,49 @@
   </div>
 
   {#if loading}
-    <div class="text-center py-12 text-gray-500">Loading...</div>
+    <div class="text-center py-12 text-gray-500">
+      <div class="inline-block animate-spin mr-2">
+        <RefreshCw size={20} />
+      </div>
+      Connecting to API at {apiUrl}...
+    </div>
   {:else if error}
-    <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
-      Error: {error}
+    <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+      <div class="flex items-start gap-3">
+        <AlertTriangle class="text-red-500 flex-shrink-0 mt-0.5" size={20} />
+        <div class="flex-1">
+          <h3 class="font-medium text-red-800">Connection Error</h3>
+          {#if isDev}
+            <!-- Detailed error in dev mode -->
+            <p class="text-red-700 text-sm mt-1">{error}</p>
+            <p class="text-red-600 text-xs mt-2">API URL: {apiUrl}</p>
+          {:else}
+            <!-- Generic error in production -->
+            <p class="text-red-700 text-sm mt-1">Unable to connect to the API server. Please try again later.</p>
+          {/if}
+          
+          {#if isDev && (error.includes('timeout') || error.includes('Failed to fetch') || error.includes('NetworkError'))}
+            <div class="mt-3 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+              <p class="text-yellow-800 text-sm font-medium">API Server Not Running?</p>
+              <p class="text-yellow-700 text-xs mt-1">
+                The GUI requires the API server to be running. Try one of these:
+              </p>
+              <ul class="text-yellow-700 text-xs mt-1 ml-4 list-disc">
+                <li>Run from project root: <code class="bg-yellow-100 px-1 rounded">bun run dev</code></li>
+                <li>Or run API separately: <code class="bg-yellow-100 px-1 rounded">bun run start</code></li>
+              </ul>
+            </div>
+          {/if}
+          
+          <button 
+            onclick={retry}
+            class="mt-3 px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 text-sm font-medium rounded-lg flex items-center gap-2 transition-colors"
+          >
+            <RefreshCw size={14} />
+            Retry
+          </button>
+        </div>
+      </div>
     </div>
   {:else if status}
     <!-- Stats Grid -->

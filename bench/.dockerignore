@@ -1,0 +1,50 @@
+# Benchmark Docker ignore
+# Ensures only necessary files are included in benchmark images
+
+# Results and reports (generated data)
+results/
+reports/
+logs/
+
+# Node modules (installed in containers)
+node_modules/
+
+# Git
+.git/
+.gitignore
+
+# Documentation (not needed in images)
+*.md
+!README.md
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build artifacts
+dist/
+build/

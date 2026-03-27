@@ -342,6 +342,7 @@ export const testModelApi = {
     maxTokens?: number;
     stream?: boolean;
     apiFormat?: 'openai' | 'anthropic';
+    chatTemplateKwargs?: Record<string, unknown>;
   }) => {
     const apiUrl = serverInfoApi.getApiUrl();
     const isAnthropic = params.apiFormat === 'anthropic';
@@ -353,13 +354,18 @@ export const testModelApi = {
     }
     messages.push({ role: 'user', content: params.message.trim() });
     
-    const requestBody = {
+    const requestBody: Record<string, unknown> = {
       model: params.model.trim(),
       messages,
       max_tokens: params.maxTokens ?? 1024,
       temperature: params.temperature ?? 0.7,
       stream: params.stream ?? false,
     };
+    
+    // Add chat_template_kwargs if provided
+    if (params.chatTemplateKwargs && Object.keys(params.chatTemplateKwargs).length > 0) {
+      requestBody.chat_template_kwargs = params.chatTemplateKwargs;
+    }
     
     // Call API server directly
     return fetch(`${apiUrl}${endpoint}`, {

@@ -16,7 +16,15 @@
     "start:all": "./start.sh",
     "lint": "tsc --noEmit",
     "test": "bun test",
-    "test:watch": "bun test --watch"
+    "test:watch": "bun test --watch",
+    "bench": "cd bench && ./run.sh quick",
+    "bench:full": "cd bench && ./run.sh full",
+    "bench:clean": "cd bench && ./run.sh clean",
+    "bench:status": "cd bench && ./run.sh status",
+    "bench:logs": "cd bench && ./run.sh logs",
+    "bench:ci": "cd bench && CI=true ./run.sh quick",
+    "docker:build": "docker build -t apimap:local .",
+    "docker:run": "docker run -p 3000:3000 -p 3001:3001 --rm apimap:local"
   },
   "keywords": [
     "openai",

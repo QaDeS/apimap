@@ -1,0 +1,32 @@
+# Benchmark Runner - Bun Implementation
+FROM docker.io/oven/bun:1-alpine
+
+WORKDIR /app
+
+# Install dependencies for health checks
+RUN apk add --no-cache curl
+
+# Copy package files
+COPY package.json bun.lockb* ./
+RUN bun install --frozen-lockfile
+
+# Copy source
+COPY src/ ./src/
+
+# Create results directory
+RUN mkdir -p results
+
+# Environment defaults
+ENV LITELLM_URL=http://litellm:4000
+ENV APIMAP_URL=http://apimap:3000
+ENV LITELLM_API_KEY=sk-test-key
+ENV APIMAP_API_KEY=test-key
+ENV BENCHMARK_OUTPUT=/app/results
+ENV BENCHMARK_WARMUP=5
+ENV BENCHMARK_SCENARIOS="1:50,10:100,50:200,100:300"
+
+# Entrypoint
+COPY docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
+
+ENTRYPOINT ["./docker-entrypoint.sh"]

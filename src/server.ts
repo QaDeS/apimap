@@ -2100,11 +2100,29 @@ ${boxBottom()}
       const guiDir = join(dirname(import.meta.dir), "gui");
       if (existsSync(join(guiDir, "package.json"))) {
         log.info(`Starting GUI dev server (hot reload) on port ${guiPort}...`);
+        
+        // Store important info to re-print after vite clears the screen
+        const startupInfo = `
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  API Map - Model Router                                                      ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  API Server:     http://${displayHost}:${apiPort}/                                      ║
+║  GUI Dev Server: http://${displayHost}:${guiPort}/                                      ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  Endpoints:                                                                  ║` + 
+      (config.schemes?.map(s => `
+║    POST http://${displayHost}:${apiPort}${getSchemePath(s)} (${s.format})`.padEnd(79) + "║").join("") || `
+║    (No schemes configured)`.padEnd(79) + "|") + `
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  Logs: ${(config.logging?.dir || "./logs").padEnd(67)}║
+╚══════════════════════════════════════════════════════════════════════════════╝
+`;
+        
         guiProcess = Bun.spawn(
           ["bun", "run", "dev", "--port", String(guiPort), "--host"],
           {
             cwd: guiDir,
-            stdio: ["ignore", "inherit", "inherit"],
+            stdio: ["ignore", "pipe", "pipe"],
             env: {
               ...process.env,
               VITE_API_PORT: String(apiPort),
@@ -2113,7 +2131,39 @@ ${boxBottom()}
             },
           }
         );
-        log.info(`GUI dev server at http://${displayHost}:${guiPort}/`);
+        
+        // Handle GUI output - filter and re-print important info
+        const decoder = new TextDecoder();
+        
+        // Helper to read stream chunks
+        async function readStream(stream: ReadableStream<Uint8Array> | null, output: NodeJS.WriteStream) {
+          if (!stream) return;
+          const reader = stream.getReader();
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              const text = decoder.decode(value, { stream: true });
+              // Filter out vite's clear-screen escape sequences and re-print our info
+              if (text.includes('VITE') || text.includes('ready in') || text.includes('➜')) {
+                // Vite has started, print our startup info
+                console.log(startupInfo);
+              }
+              // Only show warnings/errors from GUI, suppress normal vite output
+              if (text.toLowerCase().includes('error') || 
+                  text.toLowerCase().includes('warning') ||
+                  text.includes('➜')) {
+                output.write(text);
+              }
+            }
+          } catch {
+            // Stream closed
+          }
+        }
+        
+        readStream(guiProcess.stdout as ReadableStream<Uint8Array>, process.stdout);
+        readStream(guiProcess.stderr as ReadableStream<Uint8Array>, process.stderr);
+        
       } else {
         log.warn(`GUI source not found at ${guiDir}`);
       }

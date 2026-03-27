@@ -1,0 +1,276 @@
+name: Benchmark
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'bench/**'
+      - 'src/**'
+      - 'Dockerfile'
+      - '.github/workflows/benchmark.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'bench/**'
+      - 'src/**'
+      - 'Dockerfile'
+  schedule:
+    # Run weekly on Sundays at 00:00 UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+    inputs:
+      benchmark_type:
+        description: 'Benchmark type'
+        required: true
+        default: 'quick'
+        type: choice
+        options:
+          - quick
+          - full
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/apibench
+
+jobs:
+  # Build API Map from source for testing
+  build-apimap:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build API Map from source
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        push: false
+        load: true
+        tags: apimap:benchmark-test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Export image for downstream jobs
+      run: |
+        docker save apimap:benchmark-test > /tmp/apimap-benchmark.tar
+
+    - name: Upload image artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: apimap-benchmark-image
+        path: /tmp/apimap-benchmark.tar
+        retention-days: 1
+
+  # Run quick benchmark in Docker
+  benchmark-quick:
+    runs-on: ubuntu-latest
+    needs: build-apimap
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Download API Map image
+      uses: actions/download-artifact@v4
+      with:
+        name: apimap-benchmark-image
+        path: /tmp
+
+    - name: Load API Map image
+      run: |
+        docker load < /tmp/apimap-benchmark.tar
+
+    - name: Free up disk space
+      run: |
+        docker system prune -af
+        rm -rf /opt/ghc
+        rm -rf /usr/local/lib/android
+
+    - name: Run quick benchmark
+      run: |
+        cd bench
+        chmod +x run.sh
+        # Use the locally built image
+        export APIMAP_IMAGE=apimap:benchmark-test
+        ./run.sh quick
+      env:
+        BENCHMARK_WARMUP: 3
+        BENCHMARK_SCENARIOS: "1:30,10:60"
+
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: benchmark-results-quick-${{ github.sha }}
+        path: |
+          bench/results/
+          bench/reports/
+        retention-days: 30
+
+    - name: Comment PR with results
+      if: github.event_name == 'pull_request' && always()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+          
+          let summary = '## 🔬 Benchmark Results (Quick)\n\n';
+          
+          // Try to read the latest markdown result
+          const resultsDir = './bench/results';
+          try {
+            const files = fs.readdirSync(resultsDir);
+            const mdFiles = files.filter(f => f.endsWith('.md')).sort().reverse();
+            
+            if (mdFiles.length > 0) {
+              const content = fs.readFileSync(path.join(resultsDir, mdFiles[0]), 'utf8');
+              // Extract summary section
+              const summaryMatch = content.match(/## Summary[\s\S]*?(?=##|$)/);
+              if (summaryMatch) {
+                summary += summaryMatch[0];
+              } else {
+                summary += content.substring(0, 2000); // First 2000 chars
+              }
+            } else {
+              summary += 'No results generated.';
+            }
+          } catch (error) {
+            summary += `Error reading results: ${error.message}`;
+          }
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: summary
+          });
+
+    - name: Create step summary
+      if: always()
+      run: |
+        echo "# Quick Benchmark Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        LATEST_MD=$(ls -t bench/results/*.md 2>/dev/null | head -1)
+        if [ -n "$LATEST_MD" ]; then
+          cat "$LATEST_MD" >> $GITHUB_STEP_SUMMARY
+        fi
+
+  # Run full benchmark weekly
+  benchmark-full:
+    runs-on: ubuntu-latest
+    needs: build-apimap
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.benchmark_type == 'full')
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Download API Map image
+      uses: actions/download-artifact@v4
+      with:
+        name: apimap-benchmark-image
+        path: /tmp
+
+    - name: Load API Map image
+      run: |
+        docker load < /tmp/apimap-benchmark.tar
+
+    - name: Free up disk space
+      run: |
+        docker system prune -af
+        rm -rf /opt/ghc
+        rm -rf /usr/local/lib/android
+
+    - name: Run full benchmark
+      run: |
+        cd bench
+        chmod +x run.sh
+        export APIMAP_IMAGE=apimap:benchmark-test
+        ./run.sh full
+
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: benchmark-results-full-${{ github.sha }}
+        path: |
+          bench/results/
+          bench/reports/
+        retention-days: 90
+
+    - name: Create benchmark report
+      if: always()
+      run: |
+        echo "# Full Benchmark Report" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # Find latest markdown file
+        LATEST_MD=$(ls -t bench/results/*.md 2>/dev/null | head -1)
+        if [ -n "$LATEST_MD" ]; then
+          cat "$LATEST_MD" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "No results available" >> $GITHUB_STEP_SUMMARY
+        fi
+
+  # Build and push benchmark images (separate from main apimap image)
+  build-benchmark-images:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+    - name: Build and push benchmark image
+      uses: docker/build-push-action@v6
+      with:
+        context: ./bench
+        file: ./bench/Dockerfile.benchmark
+        push: true
+        tags: |
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Build and push mock server image
+      uses: docker/build-push-action@v6
+      with:
+        context: ./bench
+        file: ./bench/Dockerfile.mockserver
+        push: true
+        tags: |
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-mockserver:latest
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-mockserver:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max

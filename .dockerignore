@@ -6,6 +6,7 @@ gui/node_modules
 logs
 config/backups
 dist
+bench
 *.log
 .env
 .env.local

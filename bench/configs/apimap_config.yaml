@@ -1,0 +1,49 @@
+# API Map Configuration for Docker Benchmark Testing
+# This configuration routes requests to the mock LLM server
+
+server:
+  port: 3000
+  host: "0.0.0.0"
+  timeout: 120
+
+logging:
+  dir: "./logs"
+  level: "warn"  # Reduce log verbosity for benchmarks
+  maskKeys: true
+
+# Schemes define the API formats accepted
+schemes:
+  - id: openai-chat
+    format: openai
+    path: /v1/chat/completions
+  
+  - id: openai-models
+    format: openai
+    path: /v1/models
+  
+  - id: openai-health
+    format: openai
+    path: /health
+
+# Provider configuration - pointing to mock server
+providers:
+  mock-openai:
+    baseUrl: "http://mock-server:9999/v1"
+    apiKey: "mock-key"
+    timeout: 180
+
+# Route configuration
+routes:
+  - pattern: "gpt-4*"
+    provider: mock-openai
+    priority: 100
+  
+  - pattern: "claude-3*"
+    provider: mock-openai
+    priority: 90
+  
+  - pattern: "*"
+    provider: mock-openai
+    priority: 10
+
+defaultProvider: mock-openai

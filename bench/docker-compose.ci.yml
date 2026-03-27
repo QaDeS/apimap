@@ -1,0 +1,16 @@
+# Docker Compose override for CI testing
+# 
+# This file overrides the API Map service to use a pre-built image
+# instead of building from source. Used in CI for testing published images.
+#
+# Usage:
+#   docker-compose -f docker-compose.yml -f docker-compose.ci.yml up -d
+
+version: '3.8'
+
+services:
+  apimap:
+    # Override build with published image
+    build: !reset null
+    image: ${APIMAP_IMAGE:-ghcr.io/qades/apimap:latest}
+    # No changes to other config

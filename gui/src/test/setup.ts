@@ -21,15 +21,8 @@ global.MouseEvent = window.MouseEvent as any;
 global.KeyboardEvent = window.KeyboardEvent as any;
 global.location = window.location;
 
-// Mock fetch globally
-beforeAll(() => {
-  global.fetch = jest.fn();
-});
-
 afterEach(() => {
-  // Clean up after each test
-  jest.clearAllMocks();
-  // Reset document body
+  // Reset document body after each test
   document.body.innerHTML = '';
 });
 

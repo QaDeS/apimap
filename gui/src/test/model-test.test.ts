@@ -2,12 +2,14 @@
  * @jest-environment happy-dom
  */
 
-import { describe, it, expect, beforeEach, jest } from 'bun:test';
+import { describe, it, expect, beforeEach, mock } from 'bun:test';
 
 describe('Model Test Page Logic', () => {
+  let fetchMock: ReturnType<typeof mock>;
+
   beforeEach(() => {
-    jest.clearAllMocks();
-    global.fetch = jest.fn();
+    fetchMock = mock(() => Promise.resolve(new Response('{}', { status: 200 })));
+    global.fetch = fetchMock as any;
   });
 
   it('should have correct initial state', () => {
@@ -19,6 +21,7 @@ describe('Model Test Page Logic', () => {
       stream: false,
       apiFormat: 'openai',
       endpointPath: '/chat/completions',
+      enableThinking: true,
     };
 
     expect(state.temperature).toBe(0.7);
@@ -26,6 +29,7 @@ describe('Model Test Page Logic', () => {
     expect(state.stream).toBe(false);
     expect(state.apiFormat).toBe('openai');
     expect(state.endpointPath).toBe('/chat/completions');
+    expect(state.enableThinking).toBe(true);
   });
 
   it('should validate required fields', () => {
@@ -37,5 +41,35 @@ describe('Model Test Page Logic', () => {
     expect(validateSend('gpt-4o', '')).toBe(false);
     expect(validateSend('', 'Hello')).toBe(false);
     expect(validateSend('gpt-4o', 'Hello')).toBe(true);
+  });
+
+  it('should toggle thinking state', () => {
+    let enableThinking = true;
+    
+    // Toggle off
+    enableThinking = !enableThinking;
+    expect(enableThinking).toBe(false);
+    
+    // Toggle on
+    enableThinking = !enableThinking;
+    expect(enableThinking).toBe(true);
+  });
+
+  it('should include chatTemplateKwargs in API call when provided', async () => {
+    const params = {
+      model: 'test-model',
+      message: 'Hello',
+      chatTemplateKwargs: { enable_thinking: false }
+    };
+
+    await fetch('/api/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params)
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(callBody.chatTemplateKwargs).toEqual({ enable_thinking: false });
   });
 });

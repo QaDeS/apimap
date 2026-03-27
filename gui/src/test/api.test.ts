@@ -2,22 +2,28 @@
  * Tests for API utilities
  */
 
-import { describe, it, expect, beforeEach, afterEach, jest } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { getApiConfig, getApiUrl, getWsUrl } from '../lib/utils/api';
 
 describe('API Client', () => {
+  let fetchMock: ReturnType<typeof mock>;
+
   beforeEach(() => {
-    jest.clearAllMocks();
-    global.fetch = jest.fn();
+    fetchMock = mock(() => Promise.resolve(new Response('{}', { status: 200 })));
+    global.fetch = fetchMock as any;
+  });
+
+  afterEach(() => {
+    fetchMock.mockClear();
   });
 
   describe('testModelApi', () => {
     it('should call test-model endpoint with correct parameters', async () => {
-      const mockFetch = jest.fn().mockResolvedValue({
+      const mockResponse = {
         ok: true,
         json: () => Promise.resolve({ success: true, content: 'Test' })
-      });
-      global.fetch = mockFetch;
+      };
+      fetchMock.mockImplementation(() => Promise.resolve(mockResponse as any));
 
       const params = {
         model: 'gpt-4o',
@@ -35,7 +41,7 @@ describe('API Client', () => {
         body: JSON.stringify(params)
       });
 
-      expect(mockFetch).toHaveBeenCalledWith(
+      expect(fetchMock).toHaveBeenCalledWith(
         '/api/admin/test-model',
         expect.objectContaining({
           method: 'POST',
@@ -44,7 +50,7 @@ describe('API Client', () => {
         })
       );
 
-      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
       expect(callBody.model).toBe('gpt-4o');
       expect(callBody.message).toBe('Hello');
       expect(callBody.temperature).toBe(0.7);
@@ -64,8 +70,7 @@ describe('API Client', () => {
         })
       };
       
-      const mockFetch = jest.fn().mockResolvedValue(mockResponse);
-      global.fetch = mockFetch;
+      fetchMock.mockImplementation(() => Promise.resolve(mockResponse as any));
 
       const params = {
         model: 'gpt-4o',
@@ -85,12 +90,11 @@ describe('API Client', () => {
     });
 
     it('should handle error response', async () => {
-      const mockFetch = jest.fn().mockResolvedValue({
+      fetchMock.mockImplementation(() => Promise.resolve({
         ok: false,
         status: 404,
         json: () => Promise.resolve({ error: 'No route found for model', model: 'unknown-model' })
-      });
-      global.fetch = mockFetch;
+      } as any));
 
       const response = await fetch('/api/admin/test-model', {
         method: 'POST',
@@ -106,7 +110,7 @@ describe('API Client', () => {
 
   describe('Admin API Endpoints', () => {
     it('should call /api/admin/status', async () => {
-      const mockFetch = jest.fn().mockResolvedValue({
+      fetchMock.mockImplementation(() => Promise.resolve({
         ok: true,
         json: () => Promise.resolve({
           status: 'ok',
@@ -115,19 +119,18 @@ describe('API Client', () => {
           routedRequests: 95,
           unroutedRequests: 5
         })
-      });
-      global.fetch = mockFetch;
+      } as any));
 
       const response = await fetch('/api/admin/status');
       const data = await response.json();
 
-      expect(mockFetch).toHaveBeenCalledWith('/api/admin/status');
+      expect(fetchMock).toHaveBeenCalledWith('/api/admin/status');
       expect(data.status).toBe('ok');
       expect(data.totalRequests).toBe(100);
     });
 
     it('should call /api/admin/routes', async () => {
-      const mockFetch = jest.fn().mockResolvedValue({
+      fetchMock.mockImplementation(() => Promise.resolve({
         ok: true,
         json: () => Promise.resolve({
           routes: [
@@ -135,19 +138,18 @@ describe('API Client', () => {
             { pattern: 'claude-3*', provider: 'anthropic' }
           ]
         })
-      });
-      global.fetch = mockFetch;
+      } as any));
 
       const response = await fetch('/api/admin/routes');
       const data = await response.json();
 
-      expect(mockFetch).toHaveBeenCalledWith('/api/admin/routes');
+      expect(fetchMock).toHaveBeenCalledWith('/api/admin/routes');
       expect(data.routes).toHaveLength(2);
       expect(data.routes[0].pattern).toBe('gpt-4*');
     });
 
     it('should call /api/admin/providers', async () => {
-      const mockFetch = jest.fn().mockResolvedValue({
+      fetchMock.mockImplementation(() => Promise.resolve({
         ok: true,
         json: () => Promise.resolve({
           registered: [
@@ -156,13 +158,12 @@ describe('API Client', () => {
           ],
           builtin: ['openai', 'anthropic', 'ollama']
         })
-      });
-      global.fetch = mockFetch;
+      } as any));
 
       const response = await fetch('/api/admin/providers');
       const data = await response.json();
 
-      expect(mockFetch).toHaveBeenCalledWith('/api/admin/providers');
+      expect(fetchMock).toHaveBeenCalledWith('/api/admin/providers');
       expect(data.registered).toHaveLength(2);
     });
   });

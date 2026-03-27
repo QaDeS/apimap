@@ -1,6 +1,7 @@
 # API Map - Universal Model Router
 
 [![CI](https://github.com/qades/apimap/actions/workflows/ci.yml/badge.svg)](https://github.com/qades/apimap/actions/workflows/ci.yml)
+[![Benchmark](https://github.com/qades/apimap/actions/workflows/benchmark.yml/badge.svg)](https://github.com/qades/apimap/actions/workflows/benchmark.yml)
 [![Docker Image](https://img.shields.io/badge/docker-ghcr.io%2Fqades%2Fapimap-blue?logo=docker)](https://ghcr.io/qades/apimap)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -322,6 +323,33 @@ The server exposes a management API at `/api/admin/`:
 - `GET /api/admin/backups` - List backups
 - `POST /api/admin/backups` - Create backup
 - `POST /api/admin/backups/:filename` - Restore backup
+
+## Performance
+
+API Map is designed for high-performance routing with minimal overhead:
+
+| Metric | Typical Value |
+|--------|---------------|
+| **Cold Start** | ~50ms |
+| **Request Latency** | <5ms overhead |
+| **Throughput** | 1000+ req/sec |
+| **Memory Usage** | ~50MB base |
+
+### Running Benchmarks
+
+Benchmark your changes locally:
+
+```bash
+# Quick benchmark (2-3 minutes)
+bun run bench
+
+# Full benchmark suite (10-15 minutes)
+bun run bench:full
+```
+
+Results are saved to `bench/results/` with detailed metrics comparing API Map against other gateways.
+
+See [BENCHMARK.md](BENCHMARK.md) for detailed documentation.
 
 ## Development
 

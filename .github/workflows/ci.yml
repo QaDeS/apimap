@@ -76,8 +76,77 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  release:
+  # Benchmark job - tests performance of the newly built image
+  benchmark:
     needs: build-docker
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    
+    permissions:
+      contents: read
+      packages: read
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Free up disk space
+        run: |
+          docker system prune -af
+          rm -rf /opt/ghc
+          rm -rf /usr/local/lib/android
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run benchmark against newly built image
+        run: |
+          cd bench
+          # Use the image we just built (SHA tag)
+          export APIMAP_IMAGE=ghcr.io/${{ github.repository }}:${{ github.sha }}
+          chmod +x run.sh
+          ./run.sh quick
+        env:
+          BENCHMARK_WARMUP: 3
+          BENCHMARK_SCENARIOS: "1:30,10:60"
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results-${{ github.sha }}
+          path: |
+            bench/results/
+            bench/reports/
+          retention-days: 30
+
+      - name: Create benchmark summary
+        if: always()
+        run: |
+          echo "# Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Image tested: \`ghcr.io/${{ github.repository }}:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Find and display markdown results
+          LATEST_MD=$(ls -t bench/results/*.md 2>/dev/null | head -1)
+          if [ -n "$LATEST_MD" ]; then
+            cat "$LATEST_MD" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No benchmark results generated" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  release:
+    needs: [build-docker, benchmark]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -117,6 +186,10 @@ jobs:
           ## Installation
 
           See [README.md](https://github.com/${REPO}#installation) for detailed setup instructions.
+
+          ## Performance
+
+          See [BENCHMARK.md](https://github.com/${REPO}/blob/main/BENCHMARK.md) for performance characteristics.
 
           ---
           EOF
