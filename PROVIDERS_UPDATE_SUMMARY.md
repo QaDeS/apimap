@@ -3,11 +3,12 @@
 ## Date: 2026-03-27 (Final Update)
 
 ### Overview
-Added 41 new LLM providers to API Map in two commits:
+Added 65 new LLM providers to API Map in three commits:
 1. First commit: 27 providers (including required Inception Labs)
 2. Second commit: 4 additional providers (v0, GitHub Copilot, HF Endpoints, Heroku)
+3. Third commit: 24 final OpenAI-compatible providers
 
-Expanded coverage from 32 to **73 total providers**.
+Expanded coverage from 32 to **97 total providers**.
 
 All new providers are OpenAI-compatible and use the existing `OpenAICompatibleProvider` class, requiring only configuration additions.
 
@@ -64,6 +65,32 @@ All new providers are OpenAI-compatible and use the existing `OpenAICompatiblePr
 - **GitHub Copilot** (`github_copilot`) - Copilot Chat API
 - **HuggingFace Inference Endpoints** (`huggingface_endpoints`) - Dedicated HF endpoints
 - **Heroku** (`heroku`) - Dyno-based inference
+
+#### P8 - Final Batch (24 additional OpenAI-compatible)
+- **Helicone** (`helicone`) - LLM observability and gateway
+- **Bytez** (`bytez`) - Model inference API
+- **Baseten** (`baseten`) - Model deployment platform
+- **DataRobot** (`datarobot`) - Enterprise ML platform
+- **Empower** (`empower`) - AI inference platform
+- **Lemonade** (`lemonade`) - AI model hub
+- **MariTalk** (`maritalk`) - Portuguese language LLM
+- **Morph** (`morph`) - AI development platform
+- **NLP Cloud** (`nlpcloud`) - Production NLP API
+- **Petals** (`petals`) - Distributed LLM inference
+- **Weights & Biases** (`wandb`) - ML platform with LLMs
+- **Clarifai** (`clarifai`) - AI platform for vision and language
+- **Codestral** (`codestral`) - Code completion models
+- **CometAPI** (`cometapi`) - Unified AI model access
+- **Xiaomi MiMo** (`xiaomi_mimo`) - Xiaomi AI models
+- **Scaleway** (`scaleway`) - European cloud AI services
+- **Synthetic** (`synthetic`) - AI model hosting platform
+- **Apertis** (`apertis`) - AI inference platform
+- **NanoGPT** (`nano_gpt`) - Pay-per-prompt LLM access
+- **Abliteration** (`abliteration`) - Uncensored model inference
+- **LlamaGate** (`llamagate`) - Open LLM gateway
+- **GMI** (`gmi`) - Model serving platform
+- **AssemblyAI** (`assemblyai`) - Speech recognition and LLM
+- **Charity Engine** (`charity_engine`) - Distributed compute for AI
 
 ### Implementation Details
 
@@ -138,12 +165,12 @@ curl http://localhost:3000/v1/chat/completions \
 
 | Category | Before | After |
 |----------|--------|-------|
-| Cloud | 14 | 44 |
+| Cloud | 14 | 68 |
 | Local | 9 | 10 |
 | Enterprise | 3 | 11 |
 | Regional | 5 | 8 |
 | Custom | 0 | 0 |
-| **Total** | **31** | **73** |
+| **Total** | **31** | **97** |
 
 ### Next Steps (Optional)
 
