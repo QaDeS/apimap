@@ -187,6 +187,8 @@ export interface OpenAIChatMessage {
   name?: string;
   tool_calls?: OpenAIToolCall[];
   tool_call_id?: string;
+  /** Reasoning content from models like DeepSeek R1 */
+  reasoning_content?: string;
 }
 
 export interface OpenAIToolCall {
@@ -231,6 +233,8 @@ export interface OpenAIRequest {
   tool_choice?: "auto" | "required" | "none" | { type: "function"; function: { name: string } };
   response_format?: OpenAIResponseFormat;
   reasoning_effort?: "low" | "medium" | "high";
+  /** Chat template kwargs for providers like DeepSeek (e.g., enable_thinking) */
+  chat_template_kwargs?: Record<string, unknown>;
 }
 
 export interface OpenAIStreamChoice {

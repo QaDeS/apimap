@@ -47,6 +47,7 @@
   let response: { 
     success: boolean; 
     content?: string; 
+    reasoningContent?: string;
     usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
     provider?: string;
     targetModel?: string;
@@ -55,6 +56,7 @@
     details?: string;
   } | null = $state(null);
   let streamingContent = $state('');
+  let streamingReasoning = $state('');
   let copied = $state(false);
   
   // Available models from routes
@@ -142,6 +144,7 @@
         const reader = res.body?.getReader();
         const decoder = new TextDecoder();
         let fullContent = '';
+        let fullReasoning = '';
         let finishReason: string | null = null;
         let usageData = null;
         
@@ -185,9 +188,14 @@
                     
                     try {
                       const parsed = JSON.parse(data);
-                      if (parsed.choices?.[0]?.delta?.content) {
-                        fullContent += parsed.choices[0].delta.content;
+                      const delta = parsed.choices?.[0]?.delta;
+                      if (delta?.content) {
+                        fullContent += delta.content;
                         streamingContent = fullContent;
+                      }
+                      if (delta?.reasoning_content) {
+                        fullReasoning += delta.reasoning_content;
+                        streamingReasoning = fullReasoning;
                       }
                       if (parsed.choices?.[0]?.finish_reason) {
                         finishReason = parsed.choices[0].finish_reason;
@@ -210,6 +218,7 @@
         response = {
           success: true,
           content: fullContent,
+          reasoningContent: fullReasoning || undefined,
           provider: 'router',
           duration,
           usage: usageData ? {
@@ -240,10 +249,13 @@
           };
         } else {
           // OpenAI format
-          const content = data.choices?.[0]?.message?.content || '';
+          const message = data.choices?.[0]?.message;
+          const content = message?.content || '';
+          const reasoningContent = message?.reasoning_content;
           response = {
             success: true,
             content,
+            reasoningContent,
             provider: 'router',
             targetModel: data.model,
             duration,
@@ -272,7 +284,11 @@
 
   function copyResponse() {
     if (response?.content) {
-      navigator.clipboard.writeText(response.content);
+      let text = response.content;
+      if (response.reasoningContent) {
+        text = `Reasoning:\n${response.reasoningContent}\n\nResponse:\n${text}`;
+      }
+      navigator.clipboard.writeText(text);
       copied = true;
       setTimeout(() => copied = false, 2000);
     }
@@ -287,6 +303,7 @@
     enableThinking = true;
     response = null;
     streamingContent = '';
+    streamingReasoning = '';
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -638,6 +655,24 @@
           </div>
         {:else if response?.content || streamingContent}
           <div class="space-y-4">
+            <!-- Reasoning Content (Thinking) -->
+            {#if streamingReasoning || response?.reasoningContent}
+              <div class="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                <div class="flex items-center gap-2 mb-2">
+                  <Brain size={16} class="text-purple-600" />
+                  <span class="text-sm font-medium text-purple-800">Reasoning</span>
+                </div>
+                <div class="prose prose-sm max-w-none">
+                  <div class="whitespace-pre-wrap text-purple-900 text-sm leading-relaxed">
+                    {streamingReasoning || response?.reasoningContent}
+                    {#if loading && stream && !streamingReasoning}
+                      <span class="text-purple-400 italic">thinking...</span>
+                    {/if}
+                  </div>
+                </div>
+              </div>
+            {/if}
+
             <!-- Response Content -->
             <div class="prose prose-sm max-w-none">
               <div class="whitespace-pre-wrap text-gray-800 leading-relaxed">

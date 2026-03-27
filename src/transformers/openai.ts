@@ -216,6 +216,16 @@ export function parseOpenAIRequest(
     ? systemMessages.map(m => typeof m.content === "string" ? m.content : "").join("\n")
     : undefined;
 
+  // Build extensions from chat_template_kwargs
+  const extensions: Record<string, unknown> = {};
+  if (body.chat_template_kwargs) {
+    extensions.chat_template_kwargs = body.chat_template_kwargs;
+    // Extract enable_thinking if present
+    if (body.chat_template_kwargs.enable_thinking !== undefined) {
+      extensions.enable_thinking = body.chat_template_kwargs.enable_thinking;
+    }
+  }
+
   return {
     model: body.model,
     messages: chatMessages.map(openAIMessageToInternal),
@@ -229,6 +239,7 @@ export function parseOpenAIRequest(
     toolChoice: openAIToolChoiceToInternal(body.tool_choice),
     responseFormat: openAIResponseFormatToInternal(body.response_format),
     reasoningEffort: body.reasoning_effort,
+    extensions: Object.keys(extensions).length > 0 ? extensions : undefined,
     metadata,
   };
 }
@@ -271,6 +282,11 @@ export function toOpenAIRequest(request: InternalRequest): OpenAIRequest {
   if (request.responseFormat) result.response_format = internalResponseFormatToOpenAI(request.responseFormat);
   if (request.reasoningEffort && typeof request.reasoningEffort === "string") {
     result.reasoning_effort = request.reasoningEffort;
+  }
+
+  // Pass through chat_template_kwargs if present (for providers like DeepSeek)
+  if (request.extensions?.chat_template_kwargs) {
+    result.chat_template_kwargs = request.extensions.chat_template_kwargs as Record<string, unknown>;
   }
 
   return result;
@@ -322,6 +338,12 @@ export function parseOpenAIResponse(data: OpenAIResponse): InternalResponse {
   else if (finishReason === "length") stopReason = "max_tokens";
   else if (finishReason === "content_filter") stopReason = "content_filter";
 
+  // Capture reasoning_content if present (e.g., from DeepSeek)
+  const extensions: Record<string, unknown> = {};
+  if (message?.reasoning_content) {
+    extensions.reasoning_content = message.reasoning_content;
+  }
+
   return {
     id: data.id,
     model: data.model,
@@ -333,6 +355,7 @@ export function parseOpenAIResponse(data: OpenAIResponse): InternalResponse {
       completionTokens: data.usage.completion_tokens,
       totalTokens: data.usage.total_tokens,
     } : undefined,
+    extensions: Object.keys(extensions).length > 0 ? extensions : undefined,
   };
 }
 
@@ -365,6 +388,18 @@ export function toOpenAIResponse(response: InternalResponse): OpenAIResponse {
   else if (response.stopReason === "max_tokens") finishReason = "length";
   else if (response.stopReason === "content_filter") finishReason = "content_filter";
 
+  // Build message with reasoning_content if present
+  const message: OpenAIChatMessage = {
+    role: "assistant",
+    content: textContent || null,
+    tool_calls: toolCalls,
+  };
+  
+  // Include reasoning_content from extensions (e.g., from DeepSeek)
+  if (response.extensions?.reasoning_content) {
+    message.reasoning_content = response.extensions.reasoning_content as string;
+  }
+
   return {
     id: response.id,
     object: "chat.completion",
@@ -372,11 +407,7 @@ export function toOpenAIResponse(response: InternalResponse): OpenAIResponse {
     model: response.model,
     choices: [{
       index: 0,
-      message: {
-        role: "assistant",
-        content: textContent || null,
-        tool_calls: toolCalls,
-      },
+      message,
       finish_reason: finishReason,
     }],
     usage: response.usage ? {
@@ -427,6 +458,12 @@ export function parseOpenAIStreamChunk(data: Record<string, unknown>): InternalS
   // Get finish reason
   const finishReason = choice.finish_reason as string | null;
   const isComplete = finishReason !== null && finishReason !== undefined;
+
+  // Handle reasoning_content in streaming (e.g., from DeepSeek)
+  const reasoningContent = delta.reasoning_content as string;
+  if (reasoningContent) {
+    deltaContent.push({ type: "thinking", text: reasoningContent });
+  }
 
   return {
     index,
