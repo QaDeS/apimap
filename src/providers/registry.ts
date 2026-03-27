@@ -20,6 +20,29 @@ export class ProviderRegistry {
   private providers: Map<string, BaseProvider> = new Map();
 
   /**
+   * Format to provider mapping - defines which providers can handle which formats
+   */
+  private formatProviderMap: Map<string, string[]> = new Map([
+    // OpenAI formats - handled by OpenAICompatibleProvider
+    ["openai", ["openai", "groq", "together", "fireworks", "mistral", "deepseek", "vllm", "ollama"]],
+    ["openai-chat", ["openai", "groq", "together", "fireworks", "mistral", "deepseek", "vllm", "ollama"]],
+    ["openai-completions", ["openai", "groq", "together", "fireworks", "mistral", "deepseek", "vllm"]],
+    ["openai-responses", ["openai", "azure"]],
+    ["openai-compatible", ["openai", "groq", "together", "fireworks", "mistral", "deepseek", "vllm", "ollama"]],
+    // Anthropic formats
+    ["anthropic", ["anthropic"]],
+    ["anthropic-messages", ["anthropic"]],
+    // Google formats
+    ["google", ["google"]],
+    ["gemini-chat", ["google"]],
+    ["gemini-generate", ["google"]],
+    // Ollama formats
+    ["ollama", ["ollama"]],
+    ["ollama-chat", ["ollama"]],
+    ["ollama-generate", ["ollama"]],
+  ]);
+
+  /**
    * Create a provider instance based on its type
    */
   private createProvider(id: string, config: ProviderConfig): BaseProvider {
@@ -86,6 +109,41 @@ export class ProviderRegistry {
   }
 
   /**
+   * Get providers that support a specific format
+   */
+  getProvidersForFormat(format: string): BaseProvider[] {
+    const providerIds = this.formatProviderMap.get(format) || [];
+    const providers: BaseProvider[] = [];
+
+    for (const id of providerIds) {
+      const provider = this.providers.get(id);
+      if (provider) {
+        providers.push(provider);
+      }
+    }
+
+    return providers;
+  }
+
+  /**
+   * Get the first provider that supports the given format
+   */
+  getProviderForFormat(format: string): BaseProvider | undefined {
+    const providers = this.getProvidersForFormat(format);
+    return providers[0];
+  }
+
+  /**
+   * Register a format mapping for a provider
+   */
+  registerFormat(format: string, providerId: string): void {
+    const existing = this.formatProviderMap.get(format) || [];
+    if (!existing.includes(providerId)) {
+      this.formatProviderMap.set(format, [...existing, providerId]);
+    }
+  }
+
+  /**
    * Initialize providers from config
    */
   initializeFromConfig(configs: Record<string, ProviderConfig>): void {
@@ -94,7 +152,7 @@ export class ProviderRegistry {
     // First, add all built-in providers with their defaults
     for (const [id, info] of Object.entries(BUILTIN_PROVIDERS)) {
       const userConfig = configs[id];
-      
+
       const mergedConfig: ProviderConfig = {
         baseUrl: info.defaultBaseUrl,
         apiKeyEnv: info.defaultApiKeyEnv,
@@ -126,10 +184,10 @@ export class ProviderRegistry {
    * Get provider info for all registered providers
    */
   getRegisteredProviderInfos(): Array<ProviderInfo & { configured: boolean }> {
-    return this.getIds().map(id => {
+    return this.getIds().map((id) => {
       const builtin = BUILTIN_PROVIDERS[id];
       const provider = this.get(id);
-      
+
       if (builtin) {
         return {
           ...builtin,
@@ -157,7 +215,7 @@ export class ProviderRegistry {
    * Get providers by category
    */
   getProvidersByCategory(category: ProviderInfo["category"]): ProviderInfo[] {
-    return Object.values(BUILTIN_PROVIDERS).filter(p => p.category === category);
+    return Object.values(BUILTIN_PROVIDERS).filter((p) => p.category === category);
   }
 
   /**

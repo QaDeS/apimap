@@ -13,7 +13,30 @@ import type {
   TokenUsage,
   LogprobInfo,
 } from "../types/internal.ts";
-import type { OpenAIRequest, OpenAIResponse, OpenAIChatMessage, OpenAITool, OpenAIToolCall } from "../types/index.ts";
+import type { OpenAIRequest, OpenAIResponse, OpenAIChatMessage, OpenAITool, OpenAIToolCall, OpenAIContentBlock } from "../types/index.ts";
+
+// ============================================================================
+// OpenAI Completions API Types (legacy prompt-based API)
+// ============================================================================
+
+export interface OpenAICompletionRequest {
+  model: string;
+  prompt: string | string[] | number[] | number[][] | null;
+  max_tokens?: number;
+  temperature?: number;
+  top_p?: number;
+  stream?: boolean;
+  stop?: string | string[] | null;
+  suffix?: string;
+  n?: number;
+  logprobs?: number;
+  echo?: boolean;
+  best_of?: number;
+  presence_penalty?: number;
+  frequency_penalty?: number;
+  user?: string;
+  seed?: number;
+}
 
 // ============================================================================
 // Content Block Transformations
@@ -23,19 +46,7 @@ import type { OpenAIRequest, OpenAIResponse, OpenAIChatMessage, OpenAITool, Open
  * Convert OpenAI content to internal content blocks
  */
 function openAIContentToInternal(
-  content: string | null | Array<{ 
-    type: "text"; 
-    text: string 
-  } | { 
-    type: "image_url"; 
-    image_url: { url: string; detail?: string } 
-  } | {
-    type: "input_audio";
-    input_audio: { data: string; format: string }
-  } | {
-    type: "file";
-    file?: { file_data?: string; filename?: string; file_id?: string }
-  }>
+  content: string | null | OpenAIContentBlock[]
 ): string | InternalContentBlock[] {
   if (content === null) return "";
   if (typeof content === "string") return content;
@@ -48,15 +59,15 @@ function openAIContentToInternal(
         return {
           type: "image",
           image: {
-            url: item.image_url.url,
+            url: item.image_url?.url || "",
           },
         };
       case "input_audio":
         return {
           type: "audio",
           audio: {
-            base64: item.input_audio.data,
-            mimeType: item.input_audio.format === "mp3" ? "audio/mpeg" : `audio/${item.input_audio.format}`,
+            base64: item.input_audio?.data || "",
+            mimeType: item.input_audio?.format === "mp3" ? "audio/mpeg" : `audio/${item.input_audio?.format || "wav"}`,
           },
         };
       case "file":
@@ -406,6 +417,54 @@ export function parseOpenAIRequest(
 }
 
 /**
+ * Parse OpenAI legacy completions API request to internal format
+ * The completions API uses a "prompt" field instead of "messages"
+ */
+export function parseOpenAICompletionRequest(
+  body: OpenAICompletionRequest,
+  metadata: InternalRequest["metadata"]
+): InternalRequest {
+  // Convert prompt to a single user message
+  let promptText: string;
+  if (typeof body.prompt === "string") {
+    promptText = body.prompt;
+  } else if (Array.isArray(body.prompt)) {
+    if (body.prompt.length > 0 && typeof body.prompt[0] === "string") {
+      promptText = (body.prompt as string[]).join("");
+    } else {
+      promptText = String(body.prompt);
+    }
+  } else {
+    promptText = String(body.prompt ?? "");
+  }
+
+  return {
+    model: body.model,
+    messages: [{
+      role: "user",
+      content: promptText,
+    }],
+    maxTokens: body.max_tokens,
+    temperature: body.temperature,
+    topP: body.top_p,
+    stream: body.stream,
+    stopSequences: body.stop ? (Array.isArray(body.stop) ? body.stop : [body.stop]) : undefined,
+    n: body.n,
+    presencePenalty: body.presence_penalty,
+    frequencyPenalty: body.frequency_penalty,
+    seed: body.seed,
+    user: body.user,
+    metadata,
+    extensions: {
+      suffix: body.suffix,
+      echo: body.echo,
+      best_of: body.best_of,
+      logprobs: body.logprobs,
+    },
+  };
+}
+
+/**
  * Convert internal request to OpenAI format
  */
 export function toOpenAIRequest(request: InternalRequest): OpenAIRequest {
@@ -447,7 +506,7 @@ export function toOpenAIRequest(request: InternalRequest): OpenAIRequest {
   
   // Response format
   if (request.responseFormat !== undefined) result.response_format = internalResponseFormatToOpenAI(request.responseFormat);
-  if (request.modalities !== undefined) result.modalities = request.modalities;
+  if (request.modalities !== undefined) result.modalities = request.modalities as ("text" | "audio")[];
   
   // Sampling parameters
   if (request.frequencyPenalty !== undefined) result.frequency_penalty = request.frequencyPenalty;
@@ -459,8 +518,8 @@ export function toOpenAIRequest(request: InternalRequest): OpenAIRequest {
   if (request.topLogprobs !== undefined) result.top_logprobs = request.topLogprobs;
   
   // Reasoning parameters
-  if (request.reasoningEffort !== undefined && typeof request.reasoningEffort === "string") {
-    result.reasoning_effort = request.reasoningEffort;
+  if (request.reasoningEffort !== undefined && typeof request.reasoningEffort === "string" && ["low", "medium", "high"].includes(request.reasoningEffort)) {
+    result.reasoning_effort = request.reasoningEffort as "low" | "medium" | "high";
   }
   
   // Extensions
@@ -619,7 +678,7 @@ export function toOpenAIResponse(response: InternalResponse): OpenAIResponse {
 
   // Add logprobs if present
   const logprobs = response.logprobs ? internalLogprobsToOpenAI(response.logprobs) : undefined;
-  if (logprobs) {
+  if (logprobs && choices[0]) {
     choices[0].logprobs = logprobs;
   }
 
@@ -631,15 +690,54 @@ export function toOpenAIResponse(response: InternalResponse): OpenAIResponse {
     choices,
     usage: response.usage
       ? {
-          prompt_tokens: response.usage.promptTokens,
-          completion_tokens: response.usage.completionTokens,
-          total_tokens: response.usage.totalTokens,
+          prompt_tokens: response.usage.promptTokens!,
+          completion_tokens: response.usage.completionTokens!,
+          total_tokens: response.usage.totalTokens!,
           completion_tokens_details: response.usage.reasoningTokens
             ? { reasoning_tokens: response.usage.reasoningTokens }
             : undefined,
         }
       : undefined,
     system_fingerprint: response.systemFingerprint,
+  };
+}
+
+/**
+ * Convert internal response to OpenAI legacy completions format
+ * The completions API returns "text" field instead of "message" with "content"
+ */
+export function toOpenAICompletionResponse(response: InternalResponse): Record<string, unknown> {
+  // Convert content blocks to text
+  const textContent = response.content
+    .filter((c) => c.type === "text")
+    .map((c) => c.text)
+    .join("");
+
+  // Map stop reason back
+  let finishReason: string | null = null;
+  if (response.stopReason === "end_turn") finishReason = "stop";
+  else if (response.stopReason === "tool_use") finishReason = "tool_calls";
+  else if (response.stopReason === "max_tokens") finishReason = "length";
+  else if (response.stopReason === "content_filter") finishReason = "content_filter";
+
+  return {
+    id: response.id,
+    object: "text_completion",
+    created: Math.floor(Date.now() / 1000),
+    model: response.model,
+    choices: [{
+      text: textContent,
+      index: 0,
+      logprobs: null,
+      finish_reason: finishReason,
+    }],
+    usage: response.usage
+      ? {
+          prompt_tokens: response.usage.promptTokens,
+          completion_tokens: response.usage.completionTokens,
+          total_tokens: response.usage.totalTokens,
+        }
+      : undefined,
   };
 }
 
@@ -766,9 +864,51 @@ export function toOpenAIStreamChunk(chunk: InternalStreamChunk, model: string): 
   }
 
   // Include logprobs if present
-  if (chunk.logprobs) {
+  if (chunk.logprobs && choices[0]) {
     choices[0].logprobs = internalLogprobsToOpenAI(chunk.logprobs);
   }
+
+  return `data: ${JSON.stringify(data)}\n\n`;
+}
+
+/**
+ * Parse OpenAI legacy completions streaming chunk to internal format
+ * Completions API uses "text" field instead of "delta.content"
+ */
+export function parseOpenAICompletionStreamChunk(data: Record<string, unknown>): InternalStreamChunk | null {
+  const choice = (data.choices as Array<Record<string, unknown>>)?.[0];
+  if (!choice) return null;
+
+  const index = (choice.index as number) || 0;
+  const text = choice.text as string | undefined;
+
+  // Get finish reason
+  const finishReason = choice.finish_reason as string | null;
+  const isComplete = finishReason !== null && finishReason !== undefined;
+
+  return {
+    index,
+    delta: { type: "text", text: text || "" },
+    finishReason,
+    isComplete,
+  };
+}
+
+/**
+ * Convert internal stream chunk to OpenAI legacy completions SSE format
+ */
+export function toOpenAICompletionStreamChunk(chunk: InternalStreamChunk, model: string): string {
+  const data: Record<string, unknown> = {
+    id: `cmpl-${Date.now()}`,
+    object: "text_completion.chunk",
+    created: Math.floor(Date.now() / 1000),
+    model,
+    choices: [{
+      text: chunk.delta.type === "text" ? chunk.delta.text : "",
+      index: chunk.index,
+      finish_reason: chunk.finishReason ?? null,
+    }],
+  };
 
   return `data: ${JSON.stringify(data)}\n\n`;
 }

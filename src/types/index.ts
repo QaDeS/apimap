@@ -412,6 +412,17 @@ export interface AnthropicResponse {
 // Log Types
 // ============================================================================
 
+export interface UnroutedRequest {
+  id: string;
+  timestamp: string;
+  model: string;
+  apiKey: string;
+  streaming: boolean;
+  endpoint: string;
+  fullRequest?: unknown;
+  headers: Record<string, string>;
+}
+
 export interface LogEntry {
   timestamp: string;
   requestId: string;
@@ -466,6 +477,17 @@ export interface RouteConfig {
   priority?: number;
   /** Provider-specific options */
   options?: Record<string, unknown>;
+}
+
+export interface MatchResult {
+  matched: boolean;
+  captures: string[];
+}
+
+export interface RouteMatch {
+  provider: string;
+  model: string;
+  pattern: string;
 }
 
 export interface ProviderConfig {

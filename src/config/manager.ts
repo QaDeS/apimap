@@ -131,8 +131,8 @@ export class ConfigManager {
         ...parsed.preload,
       },
       schemes: parsed.schemes || [
-        { id: "openai-chat", format: "openai-chat" },
-        { id: "anthropic-messages", format: "anthropic-messages" },
+        { id: "openai-chat", format: "openai-chat", path: "/v1/chat/completions" },
+        { id: "anthropic-messages", format: "anthropic-messages", path: "/v1/messages" },
       ],
       providers: parsed.providers || {},
       routes: parsed.routes || [],
@@ -666,8 +666,8 @@ export class ConfigManager {
         enabled: false,
       },
       schemes: [
-        { id: "openai", format: "openai-chat" },
-        { id: "anthropic", format: "anthropic-messages" },
+        { id: "openai", format: "openai-chat", path: "/v1/chat/completions" },
+        { id: "anthropic", format: "anthropic-messages", path: "/v1/messages" },
       ],
       providers,
       routes,

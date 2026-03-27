@@ -14,7 +14,7 @@ export class AnthropicProvider extends BaseProvider {
    */
   override getHeaders(): Record<string, string> {
     const apiKey = this.getApiKey();
-    
+
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       "anthropic-version": "2023-06-01",
@@ -45,7 +45,7 @@ export class AnthropicProvider extends BaseProvider {
     return `${this.config.baseUrl}/v1/models`;
   }
 
-  buildRequest(body: unknown, originalHeaders: Headers, format?: string): ProviderRequest {
+  buildRequest(body: unknown, _originalHeaders: Headers, format?: string): ProviderRequest {
     return {
       url: this.getEndpointUrl(format || "anthropic-messages"),
       headers: this.getHeaders(),

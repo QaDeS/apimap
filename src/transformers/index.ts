@@ -27,6 +27,9 @@ export function parseRequest(
     case "openai-chat":
     case "openai-responses":  // Responses API uses similar structure
       return openaiTransformer.parseOpenAIRequest(body as OpenAIRequest, metadata);
+    // OpenAI legacy completions API
+    case "openai-completions":
+      return openaiTransformer.parseOpenAICompletionRequest(body as import("./openai.ts").OpenAICompletionRequest, metadata);
     // Anthropic variants
     case "anthropic":
     case "anthropic-messages":
@@ -45,6 +48,9 @@ export function toProviderRequest(format: ProviderFormat, request: InternalReque
     case "openai":
     case "openai-compatible":
     case "openai-chat":
+      return openaiTransformer.toOpenAIRequest(request);
+    // OpenAI completions API (convert to chat format for providers)
+    case "openai-completions":
       return openaiTransformer.toOpenAIRequest(request);
     // OpenAI responses API (may have differences)
     case "openai-responses":
@@ -68,6 +74,9 @@ export function parseResponse(format: ProviderFormat, data: unknown): InternalRe
     case "openai-compatible":
     case "openai-chat":
       return openaiTransformer.parseOpenAIResponse(data as OpenAIResponse);
+    // OpenAI completions API (responses are similar to chat)
+    case "openai-completions":
+      return openaiTransformer.parseOpenAIResponse(data as OpenAIResponse);
     // OpenAI responses API
     case "openai-responses":
       return openaiTransformer.parseOpenAIResponse(data as OpenAIResponse); // TODO: Handle responses API differences
@@ -90,6 +99,9 @@ export function toProviderResponse(format: ProviderFormat, response: InternalRes
     case "openai-compatible":
     case "openai-chat":
       return openaiTransformer.toOpenAIResponse(response);
+    // OpenAI completions API (response format differs from chat)
+    case "openai-completions":
+      return openaiTransformer.toOpenAICompletionResponse(response);
     // OpenAI responses API
     case "openai-responses":
       return openaiTransformer.toOpenAIResponse(response); // TODO: Handle responses API differences
@@ -121,6 +133,18 @@ export function parseStreamChunk(
           return { index: 0, delta: { type: "text", text: "" }, isComplete: true };
         }
         return openaiTransformer.parseOpenAIStreamChunk(JSON.parse(json));
+      } catch {
+        return null;
+      }
+    // OpenAI completions API (streaming chunks similar to chat)
+    case "openai-completions":
+      try {
+        if (!line.startsWith("data: ")) return null;
+        const json = line.slice(6).trim();
+        if (json === "[DONE]") {
+          return { index: 0, delta: { type: "text", text: "" }, isComplete: true };
+        }
+        return openaiTransformer.parseOpenAICompletionStreamChunk(JSON.parse(json));
       } catch {
         return null;
       }
@@ -159,6 +183,9 @@ export function toProviderStreamChunk(
     case "openai-compatible":
     case "openai-chat":
       return openaiTransformer.toOpenAIStreamChunk(chunk, model);
+    // OpenAI completions API (different stream format)
+    case "openai-completions":
+      return openaiTransformer.toOpenAICompletionStreamChunk(chunk, model);
     // OpenAI responses API
     case "openai-responses":
       return openaiTransformer.toOpenAIStreamChunk(chunk, model); // TODO: Handle responses API differences
@@ -188,6 +215,7 @@ export function createStreamStart(
     case "openai":
     case "openai-compatible":
     case "openai-chat":
+    case "openai-completions":
     case "openai-responses":
     default:
       return "";
@@ -207,10 +235,11 @@ export function createStreamStop(
     case "anthropic":
     case "anthropic-messages":
       return anthropicTransformer.createAnthropicStreamStop(stopReason, outputTokens);
-    // OpenAI variants
+    // OpenAI variants (all use same stop marker)
     case "openai":
     case "openai-compatible":
     case "openai-chat":
+    case "openai-completions":
     case "openai-responses":
     default:
       return "data: [DONE]\n\n";

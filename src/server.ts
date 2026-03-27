@@ -198,6 +198,10 @@ ${bot()}
 // Default Scheme Paths
 // ============================================================================
 
+/**
+ * Maps scheme IDs/formats to their default HTTP paths.
+ * Used for both configured schemes and URL generation.
+ */
 const SCHEME_PATH_MAP: Record<string, string> = {
   "openai": "/v1/chat/completions",
   "openai-chat": "/v1/chat/completions",
@@ -207,8 +211,39 @@ const SCHEME_PATH_MAP: Record<string, string> = {
   "openai-completions": "/v1/completions",
 };
 
+/**
+ * Built-in schemes that are ALWAYS available regardless of configuration.
+ * These standard API endpoints work out-of-the-box without requiring
+ * explicit scheme configuration in config.yaml.
+ * 
+ * Endpoints:
+ * - POST /v1/chat/completions  -> OpenAI Chat Completions format
+ * - POST /v1/messages          -> Anthropic Messages format  
+ * - POST /v1/responses         -> OpenAI Responses API format
+ * - POST /v1/completions       -> OpenAI Legacy Completions format
+ */
+const BUILTIN_SCHEMES: Record<string, { id: string; format: string; path: string }> = {
+  "/v1/chat/completions": { id: "openai", format: "openai-chat", path: "/v1/chat/completions" },
+  "/v1/messages": { id: "anthropic", format: "anthropic-messages", path: "/v1/messages" },
+  "/v1/responses": { id: "openai-responses", format: "openai-responses", path: "/v1/responses" },
+  "/v1/completions": { id: "openai-completions", format: "openai-completions", path: "/v1/completions" },
+};
+
+/**
+ * Get the URL path for a scheme. Uses explicit path if set, otherwise
+ * looks up the default path from SCHEME_PATH_MAP.
+ */
 function getSchemePath(scheme: { id: string; path?: string; format: string }): string {
   return scheme.path || SCHEME_PATH_MAP[scheme.id] || SCHEME_PATH_MAP[scheme.format] || `/${scheme.id}`;
+}
+
+/**
+ * Get built-in scheme for a given URL path.
+ * Returns undefined if the path is not a built-in endpoint.
+ * Used to provide out-of-the-box support for standard API endpoints.
+ */
+function getSchemeForPath(path: string): { id: string; format: string; path: string } | undefined {
+  return BUILTIN_SCHEMES[path];
 }
 
 // ============================================================================
@@ -291,6 +326,22 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: nu
 // Request Handling
 // ============================================================================
 
+/**
+ * Handle incoming API requests.
+ * 
+ * This function:
+ * 1. Matches the request URL against configured schemes first
+ * 2. Falls back to built-in schemes (/v1/chat/completions, /v1/messages, etc.)
+ * 3. Parses the request body based on the detected format
+ * 4. Routes the request to the appropriate provider
+ * 5. Returns the response in the original format
+ * 
+ * Built-in endpoints work without any configuration:
+ * - POST /v1/chat/completions  -> OpenAI Chat Completions
+ * - POST /v1/messages          -> Anthropic Messages
+ * - POST /v1/responses         -> OpenAI Responses API
+ * - POST /v1/completions       -> OpenAI Legacy Completions
+ */
 async function handleRequest(
   req: Request,
   requestId: string,
@@ -300,7 +351,10 @@ async function handleRequest(
   const config = state.config.getConfig();
   
   // Find matching scheme by path (explicit or derived from format)
-  const scheme = config.schemes?.find(s => url.pathname === getSchemePath(s));
+  const configuredScheme = config.schemes?.find(s => url.pathname === getSchemePath(s));
+  
+  // Fall back to built-in schemes for standard endpoints (always available)
+  const scheme = configuredScheme || getSchemeForPath(url.pathname);
   
   if (!scheme || req.method !== "POST") {
     return jsonResponse({ error: "Not found" }, 404, config, req.headers.get("origin"));
@@ -329,7 +383,7 @@ async function handleRequest(
 
   const endpointPath = getSchemePath(scheme);
   
-  // Create internal request
+  // Create internal request using the transformer registry
   const internalReq = transformers.parseRequest(scheme.format as transformers.ProviderFormat, body, {
     sourceFormat: scheme.format as "openai" | "anthropic" | "google" | "ollama" | "custom",
     endpoint: endpointPath,

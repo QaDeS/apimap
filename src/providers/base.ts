@@ -4,6 +4,11 @@
 
 import type { ProviderConfig } from "../types/index.ts";
 import type { ProviderRequest, ProviderInfo } from "./types.ts";
+import type {
+  InternalRequest,
+  InternalResponse,
+  InternalStreamChunk,
+} from "../types/internal.ts";
 
 /**
  * Abstract base class for all providers
@@ -28,7 +33,7 @@ export abstract class BaseProvider {
    * Get the API key for this provider (from config or environment)
    */
   getApiKey(): string | undefined {
-    return this.config.apiKey || 
+    return this.config.apiKey ||
       (this.config.apiKeyEnv ? process.env[this.config.apiKeyEnv] : undefined);
   }
 
@@ -85,7 +90,7 @@ export abstract class BaseProvider {
    */
   getEndpointUrl(format: string): string {
     const baseUrl = this.config.baseUrl;
-    
+
     // Default: OpenAI-compatible providers
     switch (format) {
       case "openai-responses":
@@ -151,5 +156,79 @@ export abstract class BaseProvider {
       supportsStreaming: this.supportsStreaming(),
       timeout: this.config.timeout || 120,
     };
+  }
+
+  // ============================================================================
+  // Format Transformation Methods
+  // Override these in subclasses to support specific formats.
+  // Return null if the format is not supported.
+  // ============================================================================
+
+  /**
+   * Parse incoming request from client format to internal format.
+   * Return null if this provider cannot handle the given format.
+   */
+  parseRequest(
+    _format: string,
+    _body: unknown,
+    _metadata: InternalRequest["metadata"]
+  ): InternalRequest | null {
+    return null;
+  }
+
+  /**
+   * Convert internal request to provider's expected format.
+   * Return null if this provider cannot handle the given format.
+   */
+  toProviderRequest(_format: string, _request: InternalRequest): unknown | null {
+    return null;
+  }
+
+  /**
+   * Parse provider response to internal format.
+   * Return null if this provider cannot handle the given format.
+   */
+  parseResponse(_format: string, _data: unknown): InternalResponse | null {
+    return null;
+  }
+
+  /**
+   * Convert internal response to client's expected format.
+   * Return null if this provider cannot handle the given format.
+   */
+  toClientResponse(_format: string, _response: InternalResponse): unknown | null {
+    return null;
+  }
+
+  /**
+   * Parse a streaming chunk from provider format to internal format.
+   * Return null if this provider cannot handle the given format or chunk is invalid.
+   */
+  parseStreamChunk(_format: string, _line: string): InternalStreamChunk | null {
+    return null;
+  }
+
+  /**
+   * Convert internal stream chunk to client's expected SSE format.
+   * Return empty string if this provider cannot handle the given format.
+   */
+  toClientStreamChunk(_format: string, _chunk: InternalStreamChunk, _model: string): string {
+    return "";
+  }
+
+  /**
+   * Create stream start events for a provider format.
+   * Return empty string if no start events needed or format not supported.
+   */
+  createStreamStart(_format: string, _messageId: string, _usage?: { input_tokens?: number }): string {
+    return "";
+  }
+
+  /**
+   * Create stream stop events for a provider format.
+   * Return empty string if format not supported.
+   */
+  createStreamStop(_format: string, _stopReason: string | null, _outputTokens: number): string {
+    return "";
   }
 }

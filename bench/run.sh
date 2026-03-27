@@ -98,6 +98,18 @@ check_prerequisites() {
     print_success "Prerequisites OK (Docker + Compose)"
 }
 
+# Print compose file mode info (call before get_compose_files to avoid capturing output)
+print_compose_mode_info() {
+    # In CI mode or when APIMAP_IMAGE is set, use the CI override
+    if [ -n "$CI" ] && [ "$CI" = "true" ]; then
+        print_info "CI mode: Using published image (ghcr.io/qades/apimap:latest)"
+    elif [ -n "$APIMAP_IMAGE" ]; then
+        print_info "Using custom image: $APIMAP_IMAGE"
+    else
+        print_info "Development mode: Building API Map from local source"
+    fi
+}
+
 # Determine compose files to use
 get_compose_files() {
     local files="-f docker-compose.yml"
@@ -105,12 +117,8 @@ get_compose_files() {
     # In CI mode or when APIMAP_IMAGE is set, use the CI override
     if [ -n "$CI" ] && [ "$CI" = "true" ]; then
         files="$files -f docker-compose.ci.yml"
-        print_info "CI mode: Using published image (ghcr.io/qades/apimap:latest)"
     elif [ -n "$APIMAP_IMAGE" ]; then
         files="$files -f docker-compose.ci.yml"
-        print_info "Using custom image: $APIMAP_IMAGE"
-    else
-        print_info "Development mode: Building API Map from local source"
     fi
     
     echo "$files"
@@ -124,6 +132,7 @@ build_containers() {
     
     export COMPOSE_PROJECT_NAME="$PROJECT_NAME"
     
+    print_compose_mode_info
     local compose_files=$(get_compose_files)
     
     # Check if docker-compose supports --parallel (podman-compose doesn't)
@@ -199,6 +208,7 @@ run_quick() {
     cd "$SCRIPT_DIR"
     export COMPOSE_PROJECT_NAME="$PROJECT_NAME"
     
+    print_compose_mode_info
     local compose_files=$(get_compose_files)
     
     # Start services and run benchmark with any extra arguments
@@ -313,6 +323,7 @@ run_full() {
     cd "$SCRIPT_DIR"
     export COMPOSE_PROJECT_NAME="$PROJECT_NAME"
     
+    print_compose_mode_info
     local compose_files=$(get_compose_files)
     
     # Start services and run full benchmark with any extra arguments
@@ -438,6 +449,7 @@ show_status() {
     cd "$SCRIPT_DIR"
     export COMPOSE_PROJECT_NAME="$PROJECT_NAME"
     
+    print_compose_mode_info
     local compose_files=$(get_compose_files)
     
     echo -e "${BOLD}Containers:${NC}"

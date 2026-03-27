@@ -356,14 +356,18 @@ export type ProviderFormat =
   // Anthropic variants
   | "anthropic-messages"
   // Gemini variants
+  | "gemini"
   | "gemini-chat"
   | "gemini-generate"
   // Ollama variants
+  | "ollama"
   | "ollama-chat"
   | "ollama-generate"
   // DeepSeek
+  | "deepseek"
   | "deepseek-chat"
   // vLLM
+  | "vllm"
   | "vllm-chat"
   // Legacy/simple formats (backward compatible)
   | "openai"

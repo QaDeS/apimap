@@ -24,11 +24,10 @@ import type {
  * Convert Anthropic tool to internal tool
  */
 function anthropicToolToInternal(tool: AnthropicTool): InternalTool {
-  const { $schema, ...parameters } = tool.input_schema;
   return {
     name: tool.name,
     description: tool.description,
-    parameters: parameters as InternalTool["parameters"],
+    parameters: tool.input_schema as InternalTool["parameters"],
   };
 }
 
@@ -100,11 +99,14 @@ function internalContentToAnthropic(block: InternalContentBlock): AnthropicConte
         ...(block.cacheControl ? { cache_control: { type: "ephemeral" } } : {}),
       };
     case "image":
+      // Anthropic only supports base64 images, not URLs
       return {
         type: "image",
-        source: block.image?.url 
-          ? { type: "url", url: block.image.url }
-          : { type: "base64", media_type: block.image?.mimeType || "image/jpeg", data: block.image?.base64 || "" },
+        source: {
+          type: "base64",
+          media_type: (block.image?.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp") || "image/jpeg",
+          data: block.image?.base64 || "",
+        },
       };
     case "tool_call":
       return {
@@ -182,12 +184,9 @@ function internalMessageToAnthropic(msg: InternalMessage): AnthropicMessage {
  */
 function anthropicToolChoiceToInternal(choice: AnthropicToolChoice | undefined): ToolChoice | undefined {
   if (!choice) return undefined;
-  if (choice === "auto" || choice === "any") {
-    return choice === "any" ? "required" : "auto";
-  }
-  if (typeof choice === "object" && choice.type === "tool") {
-    return { name: choice.name };
-  }
+  if (choice.type === "auto") return "auto";
+  if (choice.type === "any") return "required";
+  if (choice.type === "tool") return { name: choice.name };
   return "auto";
 }
 
@@ -196,8 +195,8 @@ function anthropicToolChoiceToInternal(choice: AnthropicToolChoice | undefined):
  */
 function internalToolChoiceToAnthropic(choice: ToolChoice | undefined): AnthropicToolChoice | undefined {
   if (!choice) return undefined;
-  if (choice === "auto") return "auto";
-  if (choice === "required") return "any";
+  if (choice === "auto") return { type: "auto" };
+  if (choice === "required") return { type: "any" };
   if (choice === "none") return undefined; // Anthropic doesn't support "none"
   return { type: "tool", name: choice.name };
 }
@@ -213,9 +212,11 @@ export function parseAnthropicRequest(
   let reasoningEffort: InternalRequest["reasoningEffort"];
   if (body.thinking?.type === "enabled") {
     const budget = body.thinking.budget_tokens;
-    if (budget < 4000) reasoningEffort = "low";
-    else if (budget < 16000) reasoningEffort = "medium";
-    else reasoningEffort = "high";
+    if (budget !== undefined) {
+      if (budget < 4000) reasoningEffort = "low";
+      else if (budget < 16000) reasoningEffort = "medium";
+      else reasoningEffort = "high";
+    }
   }
 
   // Convert system
@@ -246,7 +247,6 @@ export function parseAnthropicRequest(
     reasoningEffort,
     extensions: {
       anthropic_metadata: body.metadata,
-      anthropic_output_config: body.output_config,
     },
     metadata,
   };
@@ -319,7 +319,7 @@ export function parseAnthropicResponse(data: AnthropicResponse): InternalRespons
   if (data.stop_reason === "end_turn") stopReason = "end_turn";
   else if (data.stop_reason === "tool_use") stopReason = "tool_use";
   else if (data.stop_reason === "max_tokens") stopReason = "max_tokens";
-  else if (data.stop_reason === "content_filter") stopReason = "content_filter";
+  // Note: Anthropic doesn't have "content_filter" stop reason
 
   // Extract tool calls
   const toolCalls = content.filter(c => c.type === "tool_call");
@@ -360,11 +360,11 @@ export function toAnthropicResponse(response: InternalResponse): AnthropicRespon
   }
 
   // Map stop reason back
-  let stopReason: string | null = null;
+  let stopReason: AnthropicResponse["stop_reason"] = "end_turn";
   if (response.stopReason === "end_turn") stopReason = "end_turn";
   else if (response.stopReason === "tool_use") stopReason = "tool_use";
   else if (response.stopReason === "max_tokens") stopReason = "max_tokens";
-  else if (response.stopReason === "content_filter") stopReason = "content_filter";
+  // Note: No content_filter in Anthropic
 
   return {
     id: response.id,
@@ -373,7 +373,7 @@ export function toAnthropicResponse(response: InternalResponse): AnthropicRespon
     model: response.model,
     content,
     stop_reason: stopReason,
-    stop_sequence: response.stopSequence ?? null,
+    stop_sequence: response.stopSequence ?? undefined,
     usage: response.usage ? {
       input_tokens: response.usage.promptTokens,
       output_tokens: response.usage.completionTokens,
