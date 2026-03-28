@@ -56,6 +56,35 @@ def get_protocol_from_scenario(scenario_name: str, config: dict) -> str:
     return 'OpenAI→OpenAI'
 
 
+def get_scenario_description(scenario_name: str, config: dict) -> str:
+    """Get human-readable scenario description."""
+    for scenario in config.get('scenarios', []):
+        if scenario.get('name') == scenario_name:
+            concurrency = scenario.get('concurrency', 1)
+            requests = scenario.get('requests', 0)
+            protocol = scenario.get('protocol', {})
+            proto_desc = protocol.get('description', 'OpenAI→OpenAI')
+            return f"{concurrency} concurrent, {requests} req [{proto_desc}]"
+    return scenario_name
+
+
+def get_scenario_concurrency(scenario_name: str, config: dict) -> int:
+    """Get concurrency level for a scenario."""
+    for scenario in config.get('scenarios', []):
+        if scenario.get('name') == scenario_name:
+            return scenario.get('concurrency', 1)
+    return 1
+
+
+def get_scenario_protocol_description(scenario_name: str, config: dict) -> str:
+    """Get protocol description for a scenario."""
+    for scenario in config.get('scenarios', []):
+        if scenario.get('name') == scenario_name:
+            protocol = scenario.get('protocol', {})
+            return protocol.get('description', 'OpenAI→OpenAI')
+    return 'OpenAI→OpenAI'
+
+
 def group_by_protocol(results: list, config: dict) -> dict:
     """Group results by protocol for side-by-side comparison."""
     grouped = {}
@@ -68,13 +97,14 @@ def group_by_protocol(results: list, config: dict) -> dict:
     return grouped
 
 
-def print_text_report(data: dict):
+def print_text_report(data: dict, config: dict = None):
     """Print a text-based report grouped by protocol."""
     print("\n" + "="*70)
     print("BENCHMARK RESULTS")
     print("="*70)
     print(f"Timestamp: {data.get('timestamp', 'N/A')}")
-    config = data.get('config', {})
+    if config is None:
+        config = data.get('config', {})
     
     # Latency results - grouped by protocol
     if 'latency' in data and data['latency']:
@@ -123,7 +153,7 @@ def print_text_report(data: dict):
     print("\n" + "="*70)
 
 
-def create_visualizations(data: dict, output_path: Path):
+def create_visualizations(data: dict, output_path: Path, config: dict = None):
     """Create matplotlib visualizations with side-by-side bar charts."""
     if not MATPLOTLIB_AVAILABLE:
         return
@@ -183,16 +213,80 @@ def create_visualizations(data: dict, output_path: Path):
             pdf.savefig(fig, dpi=100)
             plt.close()
         
-        # Page 2: Throughput by Scenario (Side-by-side)
+        # Page 2+: Throughput by Concurrency Level (separate page per concurrency)
         throughput_data = data.get('throughput', [])
-        if throughput_data:
-            # Group by scenario
+        if throughput_data and config:
+            targets_in_data = sorted(set(r['target'] for r in throughput_data))
+            num_targets_tp = len(targets_in_data)
+            
+            # Group scenarios by concurrency level
+            concurrency_groups = {}
+            all_scenarios = set(r['scenario'] for r in throughput_data)
+            for scenario in all_scenarios:
+                concurrency = get_scenario_concurrency(scenario, config)
+                if concurrency not in concurrency_groups:
+                    concurrency_groups[concurrency] = []
+                concurrency_groups[concurrency].append(scenario)
+            
+            # Create a page for each concurrency level
+            for concurrency in sorted(concurrency_groups.keys()):
+                scenarios_in_group = sorted(concurrency_groups[concurrency])
+                
+                # Get protocol descriptions for labels
+                protocol_labels = [get_scenario_protocol_description(s, config) for s in scenarios_in_group]
+                
+                # Get total requests for this concurrency level (from first scenario)
+                total_requests = 0
+                for scenario in config.get('scenarios', []):
+                    if scenario.get('name') == scenarios_in_group[0]:
+                        total_requests = scenario.get('requests', 0)
+                        break
+                
+                fig, ax = plt.subplots(figsize=(10, max(5, len(scenarios_in_group) * 0.8)))
+                
+                y = np.arange(len(scenarios_in_group))
+                height = 0.6 / num_targets_tp
+                
+                for i, target in enumerate(targets_in_data):
+                    throughputs = []
+                    for scenario in scenarios_in_group:
+                        value = 0
+                        for r in throughput_data:
+                            if r['target'] == target and r['scenario'] == scenario:
+                                value = r['requestsPerSecond']
+                                break
+                        throughputs.append(value)
+                    
+                    offset = height * (i - (num_targets_tp - 1) / 2)
+                    bars = ax.barh(y + offset, throughputs, height, label=target, 
+                                  color=TARGET_COLORS[i % len(TARGET_COLORS)], edgecolor='black', linewidth=1.2)
+                    # Add value labels
+                    for bar in bars:
+                        width_val = bar.get_width()
+                        ax.text(width_val, bar.get_y() + bar.get_height()/2.,
+                               f' {width_val:.1f}',
+                               ha='left', va='center', fontsize=9)
+                
+                ax.set_ylabel('Protocol', fontsize=12, fontweight='bold')
+                ax.set_xlabel('Requests per Second', fontsize=12, fontweight='bold')
+                ax.set_title(f'Throughput Comparison at {concurrency} Concurrent Requests (N={total_requests})\n(Higher is Better)', 
+                            fontsize=14, fontweight='bold', pad=20)
+                ax.set_yticks(y)
+                ax.set_yticklabels(protocol_labels, fontsize=10)
+                ax.legend(fontsize=11, loc='lower right')
+                ax.grid(axis='x', alpha=0.3, linestyle='--')
+                ax.set_axisbelow(True)
+                
+                plt.tight_layout()
+                pdf.savefig(fig, dpi=100)
+                plt.close()
+        elif throughput_data:
+            # Fallback: simple grouped chart if no config available
             scenarios = sorted(set(r['scenario'] for r in throughput_data))
             targets_in_data = sorted(set(r['target'] for r in throughput_data))
             num_targets_tp = len(targets_in_data)
             
             fig, ax = plt.subplots(figsize=(12, 6))
-            
             x = np.arange(len(scenarios))
             width = 0.8 / num_targets_tp
             
@@ -207,9 +301,8 @@ def create_visualizations(data: dict, output_path: Path):
                     throughputs.append(value)
                 
                 offset = width * (i - (num_targets_tp - 1) / 2)
-                bars = ax.bar(x + offset, throughputs, width, label=target, 
+                bars = ax.bar(x + offset, throughputs, width, label=target,
                              color=TARGET_COLORS[i % len(TARGET_COLORS)], edgecolor='black', linewidth=1.2)
-                # Add value labels
                 for bar in bars:
                     height = bar.get_height()
                     ax.text(bar.get_x() + bar.get_width()/2., height,
@@ -221,7 +314,7 @@ def create_visualizations(data: dict, output_path: Path):
             ax.set_title('Throughput Comparison by Scenario\n(Higher is Better)', 
                         fontsize=14, fontweight='bold', pad=20)
             ax.set_xticks(x)
-            ax.set_xticklabels([f'Scenario {i+1}' for i in range(len(scenarios))])
+            ax.set_xticklabels([f'Scenario {i+1}' for i in range(len(scenarios))], fontsize=9)
             ax.legend(fontsize=11)
             ax.grid(axis='y', alpha=0.3, linestyle='--')
             ax.set_axisbelow(True)
@@ -380,8 +473,9 @@ def main():
     # Load and display results
     data = load_results(input_path)
     run_id = data.get('runId', input_path.stem.replace('benchmark_', ''))
+    config = data.get('config', None)
     print(f"\n📊 Run ID: {run_id}")
-    print_text_report(data)
+    print_text_report(data, config)
     
     # Create visualizations
     if not args.text_only and MATPLOTLIB_AVAILABLE:
@@ -392,7 +486,7 @@ def main():
             output_path = Path("reports") / f"benchmark_report_{run_id}.pdf"
             output_path.parent.mkdir(exist_ok=True)
         
-        create_visualizations(data, output_path)
+        create_visualizations(data, output_path, config)
 
 
 if __name__ == "__main__":

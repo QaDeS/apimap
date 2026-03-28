@@ -474,7 +474,8 @@ async function handleRequest(
   }
 
   // Transform request to target format
-  const targetFormat = provider.getInfo().supportsStreaming ? "openai" : "openai-compatible";
+  // Use the provider's native format - OpenAI-compatible providers use "openai-chat"
+  const targetFormat = provider.getInfo().supportsStreaming ? "openai-chat" : "openai-compatible";
   const transformedReq = transformers.toProviderRequest(targetFormat, internalReq);
 
   // Build provider request
@@ -532,12 +533,8 @@ async function handleRequest(
 
     // Handle streaming
     if (body.stream && provider.supportsStreaming()) {
-      // Use transparent passthrough when formats match (no transformation needed)
-      const needsTransformation = scheme.format !== targetFormat;
-      
-      if (!needsTransformation) {
-        // Passthrough mode: don't parse/reconstruct, just forward raw SSE
-        const stream = await createPassthroughStream(
+      // Always transform through internal format - no passthrough
+      // (Required for API key injection, model mapping, MCP, etc.)
           response,
           logEntry,
           startTime,

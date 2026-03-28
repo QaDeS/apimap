@@ -1437,6 +1437,211 @@ async function handleOpenAIRequest(
   }
 }
 
+// Legacy OpenAI Completions API handler (for /v1/completions)
+async function handleLegacyCompletionsRequest(
+  body: Record<string, unknown>,
+  request: Request,
+  startTime: number
+): Promise<Response> {
+  const requestId = generateRequestId();
+  const provider = 'openai-legacy';
+  
+  try {
+    if (shouldError()) {
+      const error = 'Simulated LLM error';
+      requestLogger.logError({
+        timestamp: new Date().toISOString(),
+        requestId,
+        method: 'POST',
+        path: '/v1/completions',
+        provider,
+        error,
+        context: { model: body.model, simulated: true },
+      });
+      
+      requestLogger.logRequest({
+        timestamp: new Date().toISOString(),
+        method: 'POST',
+        path: '/v1/completions',
+        provider,
+        requestId,
+        durationMs: performance.now() - startTime,
+        statusCode: 500,
+        error,
+      });
+      
+      return new Response(JSON.stringify({ error, requestId }), {
+        status: 500,
+        headers: { 'X-Request-Id': requestId },
+      });
+    }
+    
+    const prompt = body.prompt as string | string[];
+    const maxTokens = Number(body.max_tokens) || 50;
+    const stream = body.stream === true;
+    
+    // Calculate input tokens from prompt
+    const inputTokens = Array.isArray(prompt) 
+      ? prompt.reduce((sum, p) => sum + countTokens(p), 0)
+      : countTokens(prompt);
+    const latency = calculateLatency(inputTokens, maxTokens);
+    await sleep(latency);
+    
+    if (stream && config.streamingEnabled) {
+      const generator = legacyCompletionsStreamGenerator(
+        body.model as string,
+        prompt,
+        maxTokens
+      );
+      
+      requestLogger.logRequest({
+        timestamp: new Date().toISOString(),
+        method: 'POST',
+        path: '/v1/completions',
+        provider,
+        requestId,
+        durationMs: performance.now() - startTime,
+        statusCode: 200,
+        inputTokens,
+      });
+      
+      const stream = new ReadableStream({
+        async pull(controller) {
+          const result = await generator.next();
+          if (result.done) {
+            controller.close();
+          } else {
+            controller.enqueue(new TextEncoder().encode(result.value));
+          }
+        },
+      });
+      
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+          'X-Request-Id': requestId,
+        },
+      });
+    }
+    
+    const response = generateLegacyCompletionsResponse(
+      body.model as string,
+      prompt,
+      maxTokens
+    );
+    
+    requestLogger.logRequest({
+      timestamp: new Date().toISOString(),
+      method: 'POST',
+      path: '/v1/completions',
+      provider,
+      requestId,
+      durationMs: performance.now() - startTime,
+      statusCode: 200,
+      inputTokens,
+      outputTokens: response.usage.completion_tokens,
+    });
+    
+    return new Response(JSON.stringify(response), {
+      headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId },
+    });
+    
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    requestLogger.logError({
+      timestamp: new Date().toISOString(),
+      requestId,
+      method: 'POST',
+      path: '/v1/completions',
+      provider,
+      error: errorMessage,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    throw error;
+  }
+}
+
+// Legacy completions response generator
+function generateLegacyCompletionsResponse(
+  model: string,
+  prompt: string | string[],
+  maxTokens: number
+): {
+  id: string;
+  object: string;
+  created: number;
+  model: string;
+  choices: Array<{
+    index: number;
+    text: string;
+    finish_reason: string;
+  }>;
+  usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+} {
+  const responses = sampleResponses.openai;
+  const responseText = responses[Math.floor(Math.random() * responses.length)];
+  const truncatedResponse = responseText.split(' ').slice(0, maxTokens).join(' ');
+  const inputTokens = Array.isArray(prompt)
+    ? prompt.reduce((sum, p) => sum + countTokens(p), 0)
+    : countTokens(prompt);
+  const outputTokens = countTokens(truncatedResponse);
+  
+  return {
+    id: `cmpl-${generateRequestId()}`,
+    object: 'text_completion',
+    created: Math.floor(Date.now() / 1000),
+    model,
+    choices: [
+      {
+        index: 0,
+        text: truncatedResponse,
+        finish_reason: 'stop',
+      },
+    ],
+    usage: {
+      prompt_tokens: inputTokens,
+      completion_tokens: outputTokens,
+      total_tokens: inputTokens + outputTokens,
+    },
+  };
+}
+
+// Legacy completions stream generator
+async function* legacyCompletionsStreamGenerator(
+  model: string,
+  prompt: string | string[],
+  maxTokens: number
+): AsyncGenerator<string> {
+  const responses = sampleResponses.openai;
+  const responseText = responses[Math.floor(Math.random() * responses.length)];
+  const words = responseText.split(' ').slice(0, maxTokens);
+  const id = `cmpl-${generateRequestId()}`;
+  const created = Math.floor(Date.now() / 1000);
+  
+  for (let i = 0; i < words.length; i++) {
+    const chunk = {
+      id,
+      object: 'text_completion',
+      created,
+      model,
+      choices: [
+        {
+          index: 0,
+          text: (i === 0 ? '' : ' ') + words[i],
+          finish_reason: null,
+        },
+      ],
+    };
+    yield `data: ${JSON.stringify(chunk)}\n\n`;
+    await sleep(config.streaming.chunkDelay);
+  }
+  
+  yield `data: ${JSON.stringify({ id, object: 'text_completion', created, model, choices: [{ index: 0, text: '', finish_reason: 'stop' }] })}\n\n`;
+  yield 'data: [DONE]\n\n';
+}
+
 async function handleAnthropicRequest(
   body: Record<string, unknown>,
   request: Request,
@@ -1668,6 +1873,7 @@ const app = new Elysia()
     },
     endpoints: {
       openai: '/v1/chat/completions',
+      'openai-legacy': '/v1/completions',
       'openai-responses': '/v1/responses',
       anthropic: '/v1/messages',
       deepseek: '/deepseek/v1/chat/completions',
@@ -1728,6 +1934,29 @@ const app = new Elysia()
       extra_headers: t.Optional(t.Record(t.String(), t.String())),
       extra_query: t.Optional(t.Record(t.String(), t.String())),
       chat_template_kwargs: t.Optional(t.Record(t.String(), t.Unknown())),
+    }),
+  })
+
+  // Legacy OpenAI Completions API endpoint (/v1/completions)
+  .post('/v1/completions', async ({ body, request }) => {
+    const startTime = (request as Request & { _startTime?: number })._startTime || performance.now();
+    return handleLegacyCompletionsRequest(body as Record<string, unknown>, request, startTime);
+  }, {
+    body: t.Object({
+      model: t.String(),
+      prompt: t.Union([t.String(), t.Array(t.String())]),
+      stream: t.Optional(t.Boolean()),
+      max_tokens: t.Optional(t.Number()),
+      temperature: t.Optional(t.Number()),
+      top_p: t.Optional(t.Number()),
+      n: t.Optional(t.Number()),
+      logprobs: t.Optional(t.Number()),
+      echo: t.Optional(t.Boolean()),
+      stop: t.Optional(t.Union([t.String(), t.Array(t.String())])),
+      presence_penalty: t.Optional(t.Number()),
+      frequency_penalty: t.Optional(t.Number()),
+      best_of: t.Optional(t.Number()),
+      user: t.Optional(t.String()),
     }),
   })
 
@@ -1798,6 +2027,7 @@ const app = new Elysia()
       info: '/info',
       models: '/v1/models',
       openai: '/v1/chat/completions',
+      'openai-legacy': '/v1/completions',
       'openai-responses': '/v1/responses',
       anthropic: '/v1/messages',
       deepseek: '/deepseek/v1/chat/completions',
@@ -1843,6 +2073,7 @@ console.log(`   Info: http://${config.host}:${config.port}/info`);
 console.log('');
 console.log('All Endpoints Active:');
 console.log(`   OpenAI:           POST http://${config.host}:${config.port}/v1/chat/completions`);
+console.log(`   OpenAI Legacy:    POST http://${config.host}:${config.port}/v1/completions`);
 console.log(`   OpenAI Responses: POST http://${config.host}:${config.port}/v1/responses`);
 console.log(`   Anthropic:        POST http://${config.host}:${config.port}/v1/messages`);
 console.log(`   DeepSeek:         POST http://${config.host}:${config.port}/deepseek/v1/chat/completions`);
