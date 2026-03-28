@@ -5,13 +5,23 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 
+// Get a random available port
+async function getRandomPort(): Promise<number> {
+  // Start from a high port range to avoid conflicts
+  return Math.floor(Math.random() * 10000) + 20000;
+}
+
 describe('WebSocket Connectivity', () => {
   let server: any;
   let guiServer: any;
-  const apiPort = 3457;
-  const guiPort = 3005;
+  let apiPort: number;
+  let guiPort: number;
 
   beforeEach(async () => {
+    // Get random ports for each test to avoid conflicts
+    apiPort = await getRandomPort();
+    guiPort = apiPort + 1;
+    
     // Mock environment variables for local testing
     process.env.VITE_API_PORT = String(apiPort);
     
@@ -90,8 +100,8 @@ describe('WebSocket Connectivity', () => {
   });
 
   afterEach(() => {
-    server?.stop();
-    guiServer?.stop();
+    server?.stop(true);
+    guiServer?.stop(true);
   });
 
   describe('Local Server Environment', () => {
@@ -100,12 +110,23 @@ describe('WebSocket Connectivity', () => {
       const ws = new WebSocket(wsUrl);
       
       const connected = new Promise<void>((resolve, reject) => {
-        ws.onopen = () => resolve();
-        ws.onerror = () => reject(new Error('WebSocket connection error'));
+        const timeout = setTimeout(() => {
+          reject(new Error('WebSocket connection timeout'));
+        }, 5000);
+        
+        ws.onopen = () => {
+          clearTimeout(timeout);
+          resolve();
+        };
+        ws.onerror = (e) => {
+          clearTimeout(timeout);
+          reject(new Error('WebSocket connection error'));
+        };
       });
       
       await connected;
       expect(ws.readyState).toBe(WebSocket.OPEN);
+      ws.close();
     });
 
     it('should receive initial requests message on connect', async () => {
@@ -113,17 +134,32 @@ describe('WebSocket Connectivity', () => {
       const ws = new WebSocket(wsUrl);
       
       const messageReceived = new Promise<any>((resolve, reject) => {
-        ws.onmessage = (event) => resolve(JSON.parse(event.data));
-        ws.onerror = () => reject(new Error('WebSocket connection error'));
+        const timeout = setTimeout(() => {
+          reject(new Error('Timeout waiting for initial message'));
+        }, 5000);
+        
+        ws.onmessage = (event) => {
+          clearTimeout(timeout);
+          resolve(JSON.parse(event.data));
+        };
+        ws.onerror = () => {
+          clearTimeout(timeout);
+          reject(new Error('WebSocket connection error'));
+        };
       });
       
-      await new Promise((resolve) => {
-        ws.onopen = resolve;
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Timeout opening WebSocket')), 5000);
+        ws.onopen = () => {
+          clearTimeout(timeout);
+          resolve(undefined);
+        };
       });
       
       const message = await messageReceived;
       expect(message.type).toBe('initial');
       expect(Array.isArray(message.requests)).toBe(true);
+      ws.close();
     });
 
     it('should handle ping/pong messages', async () => {
@@ -131,17 +167,30 @@ describe('WebSocket Connectivity', () => {
       const ws = new WebSocket(wsUrl);
       
       // Wait for initial message first
-      await new Promise((resolve) => {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Timeout waiting for initial message')), 5000);
         ws.onmessage = (event) => {
           const data = JSON.parse(event.data);
           if (data.type === 'initial') {
+            clearTimeout(timeout);
             resolve();
           }
+        };
+        ws.onerror = () => {
+          clearTimeout(timeout);
+          reject(new Error('WebSocket error'));
         };
       });
       
       const pongReceived = new Promise<any>((resolve, reject) => {
-        ws.onmessage = (event) => resolve(JSON.parse(event.data));
+        const timeout = setTimeout(() => reject(new Error('Timeout waiting for pong')), 5000);
+        ws.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          if (data.type === 'pong') {
+            clearTimeout(timeout);
+            resolve(data);
+          }
+        };
         ws.onerror = reject;
       });
       
@@ -149,6 +198,7 @@ describe('WebSocket Connectivity', () => {
       
       const pong = await pongReceived;
       expect(pong.type).toBe('pong');
+      ws.close();
     });
 
     it('should maintain connection when GUI is served separately', async () => {
@@ -158,12 +208,20 @@ describe('WebSocket Connectivity', () => {
       const apiWs = new WebSocket(`ws://localhost:${apiPort}/ws`);
       
       const apiConnected = new Promise<void>((resolve, reject) => {
-        apiWs.onopen = () => resolve();
-        apiWs.onerror = () => reject(new Error('API WebSocket connection failed'));
+        const timeout = setTimeout(() => reject(new Error('Timeout connecting to API WebSocket')), 5000);
+        apiWs.onopen = () => {
+          clearTimeout(timeout);
+          resolve();
+        };
+        apiWs.onerror = () => {
+          clearTimeout(timeout);
+          reject(new Error('API WebSocket connection failed'));
+        };
       });
       
       await apiConnected;
       expect(apiWs.readyState).toBe(WebSocket.OPEN);
+      apiWs.close();
     });
   });
 
@@ -172,8 +230,7 @@ describe('WebSocket Connectivity', () => {
       // Simulate container where external port differs from internal port
       // Container exposes port 3456 externally, but runs on 3457 internally
       
-      const externalPort = 3456;
-      const internalPort = 3457;
+      const externalPort = await getRandomPort();
       
       const containerWsClients = new Set<WebSocket>();
       
@@ -216,21 +273,29 @@ describe('WebSocket Connectivity', () => {
 
       const ws = new WebSocket(`ws://localhost:${externalPort}/ws`);
       
-      await new Promise((resolve, reject) => {
-        ws.onopen = resolve;
-        ws.onerror = reject;
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Timeout connecting to external port')), 5000);
+        ws.onopen = () => {
+          clearTimeout(timeout);
+          resolve();
+        };
+        ws.onerror = () => {
+          clearTimeout(timeout);
+          reject(new Error('Connection to external port failed'));
+        };
       });
       
       expect(ws.readyState).toBe(WebSocket.OPEN);
       
-      externalServer.stop();
+      ws.close();
+      externalServer.stop(true);
     });
 
     it('should work with Docker port mapping (host:container)', async () => {
       // Simulate: docker run -p 3456:3456
       // Host port 3456 maps to container port 3456
       
-      const hostPort = 3459;
+      const hostPort = await getRandomPort();
       
       const containerWsClients = new Set<WebSocket>();
       
@@ -272,29 +337,40 @@ describe('WebSocket Connectivity', () => {
 
       const ws = new WebSocket(`ws://localhost:${hostPort}/ws`);
       
-      await new Promise((resolve, reject) => {
-        ws.onopen = resolve;
-        ws.onerror = reject;
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Timeout connecting to host port')), 5000);
+        ws.onopen = () => {
+          clearTimeout(timeout);
+          resolve();
+        };
+        ws.onerror = () => {
+          clearTimeout(timeout);
+          reject(new Error('Connection to host port failed'));
+        };
       });
       
       expect(ws.readyState).toBe(WebSocket.OPEN);
       
-      containerServer.stop();
+      ws.close();
+      containerServer.stop(true);
     });
   });
 
   describe('Connection Recovery', () => {
     it('should detect connection loss when server stops', async () => {
-      // Note: In a real environment with actual server, WebSocket would detect
-      // connection loss when server stops. This test verifies the connection
-      // can be established and that the close handler is properly set up.
-      
       const wsUrl = `ws://localhost:${apiPort}/ws`;
       const ws = new WebSocket(wsUrl);
       
       const openReceived = new Promise<void>((resolve, reject) => {
-        ws.onopen = () => resolve();
-        ws.onerror = () => reject(new Error('Connection failed'));
+        const timeout = setTimeout(() => reject(new Error('Timeout opening WebSocket')), 5000);
+        ws.onopen = () => {
+          clearTimeout(timeout);
+          resolve();
+        };
+        ws.onerror = () => {
+          clearTimeout(timeout);
+          reject(new Error('Connection failed'));
+        };
       });
       
       await openReceived;
@@ -306,8 +382,7 @@ describe('WebSocket Connectivity', () => {
         closeEventReceived = true;
       };
       
-      // In a real scenario, stopping the server would trigger onclose
-      // For this test, we verify the setup is correct
+      // Close the connection
       ws.close();
       
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -315,9 +390,6 @@ describe('WebSocket Connectivity', () => {
     });
 
     it('should handle reconnection attempts after server restart', async () => {
-      // This test verifies the reconnection logic works
-      // In production, the GUI would use the server-info API to get the correct port
-      
       const wsUrl = `ws://localhost:${apiPort}/ws`;
       
       const connections: WebSocket[] = [];

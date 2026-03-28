@@ -758,4 +758,166 @@ describe("OpenAI Transformer", () => {
       }).toThrow("Invalid request: 'messages' array is required for chat completions");
     });
   });
+
+  // ============================================================================
+  // chat_template_kwargs Preservation Tests
+  // ============================================================================
+
+  describe("chat_template_kwargs preservation", () => {
+    test("should preserve chat_template_kwargs in Responses API", () => {
+      const req = parseOpenAIResponsesRequest({
+        model: "gpt-4o",
+        input: "Hello",
+        chat_template_kwargs: {
+          enable_thinking: true,
+        },
+      }, {
+        sourceFormat: "openai-responses",
+        endpoint: "/v1/responses",
+        headers: {},
+        requestId: "test-123",
+        timestamp: "2024-01-01T00:00:00Z",
+      });
+
+      expect(req.chatTemplateKwargs).toBeDefined();
+      expect(req.chatTemplateKwargs?.enable_thinking).toBe(true);
+      expect(req.extensions?.chat_template_kwargs).toBeDefined();
+    });
+
+    test("should preserve chat_template_kwargs in Completions API", () => {
+      const req = parseOpenAICompletionRequest({
+        model: "gpt-3.5-turbo-instruct",
+        prompt: "Hello",
+        chat_template_kwargs: {
+          enable_thinking: true,
+        },
+      }, {
+        sourceFormat: "openai-completions",
+        endpoint: "/v1/completions",
+        headers: {},
+        requestId: "test-123",
+        timestamp: "2024-01-01T00:00:00Z",
+      });
+
+      expect(req.chatTemplateKwargs).toBeDefined();
+      expect(req.chatTemplateKwargs?.enable_thinking).toBe(true);
+      expect(req.extensions?.chat_template_kwargs).toBeDefined();
+    });
+
+    test("should preserve chat_template_kwargs in Chat API", () => {
+      const req = parseOpenAIRequest({
+        model: "gpt-4",
+        messages: [{ role: "user", content: "Hello" }],
+        chat_template_kwargs: {
+          enable_thinking: true,
+        },
+      }, {
+        sourceFormat: "openai",
+        endpoint: "/v1/chat/completions",
+        headers: {},
+        requestId: "test-123",
+        timestamp: "2024-01-01T00:00:00Z",
+      });
+
+      expect(req.chatTemplateKwargs).toBeDefined();
+      expect(req.chatTemplateKwargs?.enable_thinking).toBe(true);
+    });
+
+    test("should output chat_template_kwargs when converting to OpenAI request", () => {
+      const internal: InternalRequest = {
+        model: "test",
+        messages: [{ role: "user", content: "Hello" }],
+        chatTemplateKwargs: {
+          enable_thinking: true,
+        },
+        metadata: {
+          sourceFormat: "openai",
+          endpoint: "/v1/chat/completions",
+          headers: {},
+          requestId: "test-123",
+          timestamp: "2024-01-01T00:00:00Z",
+        },
+      };
+
+      const openaiReq = toOpenAIRequest(internal);
+
+      expect(openaiReq.chat_template_kwargs).toBeDefined();
+      expect(openaiReq.chat_template_kwargs?.enable_thinking).toBe(true);
+    });
+
+    test("should preserve enable_thinking=false correctly", () => {
+      const req = parseOpenAIResponsesRequest({
+        model: "gpt-4o",
+        input: "Hello",
+        chat_template_kwargs: {
+          enable_thinking: false,
+        },
+      }, {
+        sourceFormat: "openai-responses",
+        endpoint: "/v1/responses",
+        headers: {},
+        requestId: "test-123",
+        timestamp: "2024-01-01T00:00:00Z",
+      });
+
+      expect(req.chatTemplateKwargs?.enable_thinking).toBe(false);
+    });
+  });
+
+  // ============================================================================
+  // Stream Parameter Preservation Tests
+  // ============================================================================
+
+  describe("stream parameter preservation", () => {
+    test("should preserve stream=true in Responses API", () => {
+      const req = parseOpenAIResponsesRequest({
+        model: "gpt-4o",
+        input: "Hello",
+        stream: true,
+      }, {
+        sourceFormat: "openai-responses",
+        endpoint: "/v1/responses",
+        headers: {},
+        requestId: "test-123",
+        timestamp: "2024-01-01T00:00:00Z",
+      });
+
+      expect(req.stream).toBe(true);
+    });
+
+    test("should preserve stream=true in Completions API", () => {
+      const req = parseOpenAICompletionRequest({
+        model: "gpt-3.5-turbo-instruct",
+        prompt: "Hello",
+        stream: true,
+      }, {
+        sourceFormat: "openai-completions",
+        endpoint: "/v1/completions",
+        headers: {},
+        requestId: "test-123",
+        timestamp: "2024-01-01T00:00:00Z",
+      });
+
+      expect(req.stream).toBe(true);
+    });
+
+    test("should output stream parameter when converting to OpenAI request", () => {
+      const internal: InternalRequest = {
+        model: "test",
+        messages: [{ role: "user", content: "Hello" }],
+        stream: true,
+        metadata: {
+          sourceFormat: "openai-completions",
+          endpoint: "/v1/completions",
+          headers: {},
+          requestId: "test-123",
+          timestamp: "2024-01-01T00:00:00Z",
+        },
+      };
+
+      const openaiReq = toOpenAIRequest(internal);
+
+      expect(openaiReq.stream).toBe(true);
+    });
+  });
 });

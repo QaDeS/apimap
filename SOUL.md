@@ -40,11 +40,14 @@
 Before marking any task complete:
 
 - [ ] Tests written/modified for all changes
-- [ ] All tests passing (`bun test` exits 0)
+- [ ] **ALL tests passing** (`bun test` exits 0) - no exceptions, no "just the WebSocket tests fail"
 - [ ] No syntax errors or type errors
 - [ ] All background processes killed
 - [ ] No orphaned processes remaining
 - [ ] Resources properly released
+
+### Test Requirements
+ALL tests must pass - no exceptions. If tests require a server, the tests must start one themselves on a random free port. Never leave tests failing because "they need a server" - make the tests self-contained.
 
 ## Common Commands
 

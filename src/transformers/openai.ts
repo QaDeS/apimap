@@ -535,6 +535,7 @@ export function parseOpenAICompletionRequest(
     presencePenalty: body.presence_penalty,
     frequencyPenalty: body.frequency_penalty,
     seed: body.seed,
+    chatTemplateKwargs: (body as unknown as Record<string, unknown>)?.chat_template_kwargs as Record<string, unknown> | undefined,
     user: body.user,
     metadata,
     extensions: {
@@ -542,6 +543,9 @@ export function parseOpenAICompletionRequest(
       echo: body.echo,
       best_of: body.best_of,
       logprobs: body.logprobs,
+      ...(((body as unknown as Record<string, unknown>)?.chat_template_kwargs) ? { 
+        chat_template_kwargs: (body as unknown as Record<string, unknown>).chat_template_kwargs 
+      } : {}),
     },
   };
 }
@@ -645,6 +649,11 @@ export function parseOpenAIResponsesRequest(
   if (body.parallel_tool_calls !== undefined) {
     extensions.parallel_tool_calls = body.parallel_tool_calls;
   }
+  // Preserve chat_template_kwargs from the raw request body
+  const rawBody = body as unknown as Record<string, unknown>;
+  if (rawBody.chat_template_kwargs) {
+    extensions.chat_template_kwargs = rawBody.chat_template_kwargs;
+  }
 
   // Convert tools format
   const tools = body.tools?.map(t => ({
@@ -675,6 +684,7 @@ export function parseOpenAIResponsesRequest(
           schema: body.response_format.json_schema?.schema
         }
       : undefined,
+    chatTemplateKwargs: rawBody.chat_template_kwargs as Record<string, unknown> | undefined,
     user: body.user,
     metadata,
     extensions: Object.keys(extensions).length > 0 ? extensions : undefined,
@@ -812,7 +822,11 @@ export function toOpenAIRequest(request: InternalRequest): OpenAIRequest {
   }
   
   // Extensions
-  if (request.chatTemplateKwargs !== undefined) result.chat_template_kwargs = request.chatTemplateKwargs;
+  if (request.chatTemplateKwargs !== undefined) {
+    result.chat_template_kwargs = request.chatTemplateKwargs;
+  } else if (request.extensions?.chat_template_kwargs) {
+    result.chat_template_kwargs = request.extensions.chat_template_kwargs as Record<string, unknown>;
+  }
   if (request.prediction !== undefined) result.prediction = request.prediction;
   
   // Passthrough from extensions

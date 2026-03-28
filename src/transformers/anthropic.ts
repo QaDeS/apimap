@@ -245,8 +245,12 @@ export function parseAnthropicRequest(
     tools: body.tools?.map(anthropicToolToInternal),
     toolChoice: anthropicToolChoiceToInternal(body.tool_choice),
     reasoningEffort,
+    chatTemplateKwargs: (body as unknown as Record<string, unknown>)?.chat_template_kwargs as Record<string, unknown> | undefined,
     extensions: {
       anthropic_metadata: body.metadata,
+      ...((body as unknown as Record<string, unknown>)?.chat_template_kwargs ? { 
+        chat_template_kwargs: (body as unknown as Record<string, unknown>).chat_template_kwargs 
+      } : {}),
     },
     metadata,
   };

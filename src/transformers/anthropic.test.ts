@@ -347,4 +347,79 @@ describe("Anthropic Transformer", () => {
       expect(stop).toContain("message_stop");
     });
   });
+
+  describe("chat_template_kwargs preservation", () => {
+    test("should preserve chat_template_kwargs from Anthropic request", () => {
+      const anthropicReq = {
+        model: "claude-3-opus",
+        messages: [{ role: "user", content: "Hello" }],
+        max_tokens: 1024,
+        chat_template_kwargs: {
+          enable_thinking: true,
+        },
+      };
+
+      const internal = parseAnthropicRequest(anthropicReq as AnthropicRequest, {
+        sourceFormat: "anthropic",
+        endpoint: "/v1/messages",
+        headers: {},
+        requestId: "test-123",
+        timestamp: "2024-01-01T00:00:00Z",
+      });
+
+      expect(internal.chatTemplateKwargs).toBeDefined();
+      expect(internal.chatTemplateKwargs?.enable_thinking).toBe(true);
+      expect(internal.extensions?.chat_template_kwargs).toBeDefined();
+    });
+
+    test("should preserve enable_thinking in extensions", () => {
+      const anthropicReq = {
+        model: "claude-3-opus",
+        messages: [{ role: "user", content: "Hello" }],
+        max_tokens: 1024,
+        chat_template_kwargs: {
+          enable_thinking: false,
+        },
+      };
+
+      const internal = parseAnthropicRequest(anthropicReq as AnthropicRequest, {
+        sourceFormat: "anthropic",
+        endpoint: "/v1/messages",
+        headers: {},
+        requestId: "test-123",
+        timestamp: "2024-01-01T00:00:00Z",
+      });
+
+      expect(internal.extensions?.chat_template_kwargs?.enable_thinking).toBe(false);
+    });
+
+    test("should include chat_template_kwargs when converting to OpenAI format", () => {
+      const internal: InternalRequest = {
+        model: "test",
+        messages: [{ role: "user", content: "Hello" }],
+        chatTemplateKwargs: {
+          enable_thinking: true,
+        },
+        extensions: {
+          chat_template_kwargs: {
+            enable_thinking: true,
+          },
+        },
+        metadata: {
+          sourceFormat: "anthropic",
+          endpoint: "/v1/messages",
+          headers: {},
+          requestId: "test-123",
+          timestamp: "2024-01-01T00:00:00Z",
+        },
+      };
+
+      // Use the OpenAI transformer to convert back (simulating Anthropic -> OpenAI)
+      const { toOpenAIRequest } = require("./openai.ts");
+      const openaiReq = toOpenAIRequest(internal);
+
+      expect(openaiReq.chat_template_kwargs).toBeDefined();
+      expect(openaiReq.chat_template_kwargs?.enable_thinking).toBe(true);
+    });
+  });
 });
