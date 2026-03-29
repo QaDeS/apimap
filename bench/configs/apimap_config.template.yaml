@@ -29,7 +29,7 @@ schemes:
     path: /health
 
 # Provider configuration - pointing to mock server
-# Note: baseUrl should NOT include /v1 suffix - each format adds its own path
+# Note: baseUrl should NOT include /v1 suffix - API Map's getEndpointUrl adds /v1/paths
 providers:
   mock-openai:
     baseUrl: __MOCK_SERVER_URL__

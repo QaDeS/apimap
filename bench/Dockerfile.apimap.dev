@@ -1,0 +1,40 @@
+# API Map - Development/Benchmark Image
+# This is a dev-friendly image that supports volume mapping for local development
+# Unlike the production Dockerfile, this doesn't require rebuilding on code changes
+
+FROM oven/bun:1-alpine
+
+WORKDIR /app
+
+# Install dependencies for native modules
+RUN apk add --no-cache ca-certificates wget
+
+# Copy and install dependencies first (for better caching)
+# These are mounted as volumes in dev, but we need them for the image to work standalone too
+COPY package.json bun.lock ./
+COPY gui/package.json gui/bun.lock ./gui/
+
+RUN bun install --frozen-lockfile && \
+    cd gui && bun install --frozen-lockfile && cd ..
+
+# Build GUI (needed even in dev for the server to serve)
+# In volume-mapped dev mode, this will be overwritten by the volume mount
+# so we rebuild in the entrypoint if needed
+COPY . .
+RUN bun run build:gui 2>/dev/null || echo "GUI build skipped - will be built at runtime if needed"
+
+# Create directories for logs and config
+RUN mkdir -p logs config config/backups
+
+# Copy entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENV API_MAP_IN_DOCKER=true
+ENV NODE_ENV=development
+
+# Expose ports
+EXPOSE 3000 3001
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD []

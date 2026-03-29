@@ -136,15 +136,17 @@ export abstract class BaseProvider {
   getEndpointUrl(format: string): string {
     const baseUrl = this.config.baseUrl;
 
-    // Default: OpenAI-compatible providers
+    // Default: OpenAI-compatible providers (standard /v1 paths)
+    // Note: Most providers use /v1 prefix. Override this method for providers
+    // that don't (e.g., Ollama default, some custom endpoints)
     switch (format) {
       case "openai-responses":
-        return `${baseUrl}/responses`;
+        return `${baseUrl}/v1/responses`;
       case "openai-completions":
-        return `${baseUrl}/completions`;
+        return `${baseUrl}/v1/completions`;
       case "openai-chat":
       default:
-        return `${baseUrl}/chat/completions`;
+        return `${baseUrl}/v1/chat/completions`;
     }
   }
 
@@ -153,7 +155,7 @@ export abstract class BaseProvider {
    * Returns null if the provider doesn't have a models endpoint
    */
   getModelsUrl(): string | null {
-    return `${this.config.baseUrl}/models`;
+    return `${this.config.baseUrl}/v1/models`;
   }
 
   /**

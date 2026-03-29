@@ -17,21 +17,21 @@ export class CohereProvider extends BaseProvider {
   ];
 
   /**
-   * Cohere uses /chat endpoint for chat completions
+   * Cohere uses /v1/chat endpoint for chat completions
    */
   override getEndpointUrl(format: string): string {
     const baseUrl = this.config.baseUrl;
     
     switch (format) {
       case "cohere-generate":
-        return `${baseUrl}/generate`;
+        return `${baseUrl}/v1/generate`;
       case "cohere-embed":
-        return `${baseUrl}/embed`;
+        return `${baseUrl}/v1/embed`;
       case "cohere-rerank":
-        return `${baseUrl}/rerank`;
+        return `${baseUrl}/v1/rerank`;
       case "cohere-chat":
       default:
-        return `${baseUrl}/chat`;
+        return `${baseUrl}/v1/chat`;
     }
   }
 
@@ -39,7 +39,7 @@ export class CohereProvider extends BaseProvider {
    * Get models URL for Cohere
    */
   override getModelsUrl(): string | null {
-    return `${this.config.baseUrl}/models`;
+    return `${this.config.baseUrl}/v1/models`;
   }
 
   buildRequest(body: unknown, originalHeaders: Headers, format?: string): ProviderRequest {

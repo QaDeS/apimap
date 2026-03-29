@@ -1,6 +1,7 @@
 #!/bin/sh
 #
 # Docker entrypoint for benchmark runner (Bun)
+# Simply passes all CLI arguments to the benchmark script
 
 set -e
 
@@ -9,12 +10,9 @@ echo "║     LiteLLM vs API Map - Bun Benchmark Runner               ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
-# Configuration from environment
+# Default URLs (internal Docker network)
 LITELLM_URL="${LITELLM_URL:-http://litellm:4000}"
 APIMAP_URL="${APIMAP_URL:-http://apimap:3000}"
-BENCHMARK_SCENARIOS="${BENCHMARK_SCENARIOS:-1:50,10:100,50:200,100:300}"
-WAIT_FOR_SERVICES="${WAIT_FOR_SERVICES:-true}"
-QUICK_MODE="${QUICK_MODE:-false}"
 
 # Colors
 GREEN='\033[0;32m'
@@ -23,7 +21,9 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# Function to wait for a service
+# Wait for services
+echo -e "${BLUE}Checking service health...${NC}\n"
+
 wait_for_service() {
     local name=$1
     local url=$2
@@ -48,53 +48,36 @@ wait_for_service() {
     return 1
 }
 
-# Wait for services if enabled
-if [ "$WAIT_FOR_SERVICES" = "true" ]; then
-    echo -e "${BLUE}Checking service health...${NC}\n"
-    
-    # Wait for mock server
-    if ! wait_for_service "Mock Server" "$MOCK_SERVER_URL" "/health" 30; then
-        exit 1
-    fi
-    
-    # Wait for LiteLLM
-    if ! wait_for_service "LiteLLM" "$LITELLM_URL" "/health/liveliness" 60; then
-        exit 1
-    fi
-    
-    # Wait for API Map
-    if ! wait_for_service "API Map" "$APIMAP_URL" "/v1/models" 60; then
-        exit 1
-    fi
-    
-    echo ""
-    echo -e "${GREEN}✅ All services are ready!${NC}"
-    echo ""
+if ! wait_for_service "Mock Server" "$MOCK_SERVER_URL" "/health" 30; then
+    exit 1
 fi
+
+if ! wait_for_service "LiteLLM" "$LITELLM_URL" "/health/liveliness" 60; then
+    exit 1
+fi
+
+if ! wait_for_service "API Map" "$APIMAP_URL" "/v1/models" 60; then
+    exit 1
+fi
+
+echo ""
+echo -e "${GREEN}✅ All services are ready!${NC}"
+echo ""
 
 # Show configuration
 echo -e "${BLUE}Benchmark Configuration:${NC}"
 echo "  LiteLLM URL: $LITELLM_URL"
 echo "  API Map URL: $APIMAP_URL"
-echo "  Scenarios: $BENCHMARK_SCENARIOS"
+echo "  Arguments: $*"
 echo ""
 
-# Run benchmark
+# Run benchmark - pass all arguments directly
 echo -e "${BLUE}Starting benchmarks...${NC}\n"
 
-if [ "$QUICK_MODE" = "true" ]; then
-    echo -e "${YELLOW}Running in QUICK mode${NC}\n"
-    bun run src/benchmark/index.ts \
-        --litellm-url "$LITELLM_URL" \
-        --apimap-url "$APIMAP_URL" \
-        --quick \
-        "$@"
-else
-    bun run src/benchmark/index.ts \
-        --litellm-url "$LITELLM_URL" \
-        --apimap-url "$APIMAP_URL" \
-        "$@"
-fi
+bun run src/benchmark/index.ts \
+    --litellm-url "$LITELLM_URL" \
+    --apimap-url "$APIMAP_URL" \
+    "$@"
 
 BENCHMARK_EXIT_CODE=$?
 

@@ -3,7 +3,7 @@
 # Services:
 # 1. Mock LLM Server - Bun + Elysia (lightning fast)
 # 2. LiteLLM Proxy - AI gateway with 100+ provider support
-# 3. API Map - Universal model router (BUILT FROM LOCAL SOURCE)
+# 3. API Map - Universal model router (volume-mapped for development)
 #
 # Usage (from project root):
 #   bun run bench        # Quick benchmark (recommended)
@@ -19,14 +19,17 @@
 
 services:
   # Mock LLM Server - Bun + Elysia implementation
+  # Volume-mapped for development - no rebuild needed on code changes
   mock-server:
-    build:
-      context: .
-      dockerfile: Dockerfile.mockserver
+    image: oven/bun:1-alpine
     container_name: apibench-mock-server
+    working_dir: /app
     ports:
       - "${MOCK_SERVER_PORT:-9999}:${MOCK_SERVER_PORT:-9999}"
     volumes:
+      - ./package.json:/app/package.json:ro
+      - ./bun.lock:/app/bun.lock:ro
+      - ./src/mock-server:/app/src/mock-server:ro
       - ./logs:/app/logs
     environment:
       - MOCK_SERVER_PORT=${MOCK_SERVER_PORT:-9999}
@@ -46,7 +49,9 @@ services:
       # Enable/disable streaming
       - MOCK_STREAMING_ENABLED=${MOCK_STREAMING_ENABLED:-true}
     command: >
-      sh -c "mkdir -p /app/logs && exec bun run src/mock-server/index.ts 2>/app/logs/mock-server-stderr.log"
+      sh -c "mkdir -p /app/logs && 
+             bun install --frozen-lockfile 2>/dev/null && 
+             exec bun run src/mock-server/index.ts 2>/app/logs/mock-server-stderr.log"
     healthcheck:
       test: ["CMD", "sh", "-c", "bun -e \"fetch('http://localhost:${MOCK_SERVER_PORT:-9999}/health').then(r => process.exit(r.ok ? 0 : 1))\""]
       interval: 5s
@@ -88,8 +93,8 @@ services:
       - OPENAI_API_KEY=mock-key
       - ANTHROPIC_API_KEY=mock-key
       - MOCK_SERVER_URL=${MOCK_SERVER_URL:-http://mock-server:9999}
-      - DATABASE_URL=postgresql://litellm:litellm@litellm-db:5432/litellm
-      - STORE_MODEL_IN_DB=True
+      #- DATABASE_URL=postgresql://litellm:litellm@litellm-db:5432/litellm
+      #- STORE_MODEL_IN_DB=True
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -98,12 +103,12 @@ services:
           - model_name: gpt-4o-mini
             litellm_params:
               model: openai/gpt-4o-mini
-              api_base: http://mock-server:9999
+              api_base: http://mock-server:9999/v1
               api_key: mock-key
           - model_name: gpt-4o
             litellm_params:
               model: openai/gpt-4o
-              api_base: http://mock-server:9999
+              api_base: http://mock-server:9999/v1
               api_key: mock-key
           - model_name: claude-3-haiku
             litellm_params:
@@ -146,23 +151,30 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # API Map Router - BUILT FROM LOCAL SOURCE
-  # This builds from the parent directory (..) using the project's Dockerfile.
-  # For CI testing published images, use docker-compose.ci.yml override.
+  # API Map Router - Volume-mapped for development
+  # Uses a dev-friendly image that supports hot-reloading via volume mounts
   apimap:
     build:
       context: ..
-      dockerfile: Dockerfile
-    image: apibench-apimap:local
+      dockerfile: bench/Dockerfile.apimap.dev
+    image: apibench-apimap:dev
     container_name: apibench-apimap
     ports:
       - "${APIMAP_PORT:-3000}:3000"
       - "${APIMAP_GUI_PORT:-3001}:3001"
     volumes:
+      # Mount source code for development (hot-reload without rebuild)
+      - ../src:/app/src:ro
+      - ../package.json:/app/package.json:ro
+      - ../bun.lock:/app/bun.lock:ro
+      - ../gui/package.json:/app/gui/package.json:ro
+      - ../gui/bun.lock:/app/gui/bun.lock:ro
+      - ../gui/build:/app/gui/build:ro
+      - ../docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh:ro
       - ./configs/apimap_config.template.yaml:/app/config/config.yaml.template:ro
       - apimap-logs:/app/logs
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
       - API_PORT=3000
       - GUI_PORT=3001
       - EXTERNAL_PORT=${EXTERNAL_PORT:-3000}
@@ -173,12 +185,12 @@ services:
       - CONFIG_PATH=/tmp/config.yaml
     entrypoint: ["/bin/sh", "-c"]
     command:
-      - sed -e "s|__MOCK_SERVER_URL__|$$MOCK_SERVER_URL|g" /app/config/config.yaml.template > /tmp/config.yaml && exec /usr/local/bin/docker-entrypoint.sh
+      - sed -e "s|__MOCK_SERVER_URL__|$$MOCK_SERVER_URL|g" /app/config/config.yaml.template > /tmp/config.yaml && sh /usr/local/bin/docker-entrypoint.sh
     depends_on:
       mock-server:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "sh", "-c", "wget --quiet --tries=1 --spider http://localhost:3000/v1/models"]
+      test: ["CMD", "sh", "-c", "wget -q -O /dev/null http://localhost:3000/v1/models"]
       interval: 10s
       timeout: 5s
       retries: 15
@@ -191,22 +203,39 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # Benchmark Runner - Bun implementation
+  # Benchmark Runner - Volume-mapped for development
+  # Uses bun image directly with volume mounts - no rebuild needed on code changes
   benchmark:
-    build:
-      context: .
-      dockerfile: Dockerfile.benchmark
+    image: oven/bun:1-alpine
     container_name: apibench-runner
+    working_dir: /app
     volumes:
+      - ./package.json:/app/package.json:ro
+      - ./bun.lock:/app/bun.lock:ro
+      - ./src:/app/src:ro
+      - ./docker-entrypoint.sh:/app/docker-entrypoint.sh:ro
+      - ./container-entrypoint.sh:/app/container-entrypoint.sh:ro
       - ./results:/app/results
       - ./reports:/app/reports
     env_file:
       - .env
     environment:
-      # Additional benchmark-specific settings (overrides .env if needed)
+      # All benchmark params have defaults in Dockerfile; override here
       - WAIT_FOR_SERVICES=true
-    # Services are started by docker-compose, so skip startup inside the container
-    command: ["--skip-start"]
+      #- BENCHMARK_SCENARIOS=${BENCHMARK_SCENARIOS:-1:50,10:100,50:200,100:300}
+      #- BENCHMARK_ALL_PROTOCOLS=${BENCHMARK_ALL_PROTOCOLS:-true}
+      #- BENCHMARK_WARMUP=${BENCHMARK_WARMUP:-5}
+      #- BENCHMARK_PROMPT_SIZE=${BENCHMARK_PROMPT_SIZE:-100}
+      #- BENCHMARK_CONTEXT_SIZE=${BENCHMARK_CONTEXT_SIZE:-0}
+      #- BENCHMARK_MAX_TOKENS=${BENCHMARK_MAX_TOKENS:-50}
+      #- MOCK_LATENCY_MEAN_MS=${MOCK_LATENCY_MEAN_MS:-0}
+      #- MOCK_LATENCY_STD_MS=${MOCK_LATENCY_STD_MS:-0}
+      #- MOCK_TOKENS_PER_SEC=${MOCK_TOKENS_PER_SEC:-100}
+      #- MOCK_ERROR_RATE=${MOCK_ERROR_RATE:-0}
+    # Entrypoint wrapper - handles dependency install and passes through CLI args
+    entrypoint: ["/bin/sh", "/app/container-entrypoint.sh"]
+    profiles:
+      - benchmark
     depends_on:
       mock-server:
         condition: service_healthy
@@ -216,8 +245,6 @@ services:
         condition: service_healthy
     networks:
       - apibench-network
-    profiles:
-      - benchmark
     logging:
       driver: "json-file"
       options:

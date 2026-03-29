@@ -247,161 +247,6 @@ class ErrorLogger {
 }
 
 // ============================================================================
-// Docker Compose Manager
-// ============================================================================
-
-class DockerComposeManager {
-  private config: MockServerConfig;
-  private isRunning: boolean = false;
-
-  constructor(config: MockServerConfig) {
-    this.config = config;
-  }
-
-  async start(): Promise<void> {
-    console.log('\n🚀 Starting services with docker compose...');
-    
-    // Set environment variables for docker compose
-    const env = {
-      ...process.env,
-      MOCK_LATENCY_MEAN_MS: String(this.config.latencyMeanMs),
-      MOCK_LATENCY_STD_MS: String(this.config.latencyStdMs),
-      MOCK_TOKENS_PER_SEC: String(this.config.tokensPerSecond),
-      MOCK_ERROR_RATE: String(this.config.errorRate),
-      MOCK_INSTANT_MODE: this.config.latencyMeanMs === 0 && this.config.latencyStdMs === 0 ? 'true' : 'false',
-    };
-
-    // Try docker-compose first (works with podman-compose without daemon), then docker compose
-    const exitCode = await this.tryComposeUp(env);
-    if (exitCode !== 0) {
-      throw new Error(`docker compose up failed with exit code ${exitCode}`);
-    }
-
-    this.isRunning = true;
-    console.log('  ✅ Services started');
-    
-    // Wait for health checks to pass
-    console.log('  Waiting for health checks...');
-    await this.waitForServices();
-  }
-
-  private async tryComposeUp(env: NodeJS.ProcessEnv): Promise<number> {
-    // Check which compose command is available
-    const hasDockerCompose = await this.commandExists('docker-compose');
-    const hasDockerPlugin = await this.commandExists('docker');
-    
-    if (hasDockerCompose) {
-      // Try docker-compose first (podman-compose standalone works without daemon)
-      const proc1 = Bun.spawn(['docker-compose', 'up', '-d', 'mock-server', 'litellm', 'apimap'], {
-        env,
-        stdout: 'inherit',
-        stderr: 'pipe',
-      });
-      const exitCode1 = await proc1.exited;
-      if (exitCode1 === 0) return 0;
-    }
-    
-    if (hasDockerPlugin) {
-      // Fall back to docker compose (Docker Compose plugin)
-      if (hasDockerCompose) {
-        console.log('  docker-compose failed, trying docker compose...');
-      }
-      const proc2 = Bun.spawn(['docker', 'compose', 'up', '-d', 'mock-server', 'litellm', 'apimap'], {
-        env,
-        stdout: 'inherit',
-        stderr: 'inherit',
-      });
-      return await proc2.exited;
-    }
-    
-    console.error('  ❌ Neither docker-compose nor docker compose found');
-    return 1;
-  }
-  
-  private async commandExists(cmd: string): Promise<boolean> {
-    try {
-      const proc = Bun.spawn(['which', cmd], { stdout: 'pipe', stderr: 'pipe' });
-      const exitCode = await proc.exited;
-      return exitCode === 0;
-    } catch {
-      return false;
-    }
-  }
-
-  private async waitForServices(): Promise<void> {
-    // Use internal Docker network URLs (not localhost) for container-to-container communication
-    const services = [
-      { name: 'Mock Server', url: `${Bun.env.MOCK_SERVER_URL || 'http://mock-server:9999'}/health` },
-      { name: 'LiteLLM', url: `${Bun.env.LITELLM_URL || 'http://localhost:4000'}/health/liveliness`, headers: { 'Authorization': `Bearer ${Bun.env.LITELLM_API_KEY || 'sk-test-key'}` } },
-      { name: 'API Map', url: `${Bun.env.APIMAP_URL || 'http://localhost:3000'}/v1/models`, headers: { 'Authorization': `Bearer ${Bun.env.APIMAP_API_KEY || 'test-key'}` } },
-    ];
-
-    for (const service of services) {
-      let retries = 0;
-      const maxRetries = 60;
-      
-      while (retries < maxRetries) {
-        try {
-          const resp = await fetch(service.url, {
-            headers: service.headers || {},
-            signal: AbortSignal.timeout(2000),
-          });
-          if (resp.status === 200) {
-            console.log(`    ✅ ${service.name} ready`);
-            break;
-          }
-        } catch {
-          // Not ready yet
-        }
-        await new Promise(r => setTimeout(r, 1000));
-        retries++;
-      }
-      
-      if (retries >= maxRetries) {
-        throw new Error(`${service.name} failed to become healthy within 60 seconds`);
-      }
-    }
-  }
-
-  async stop(): Promise<void> {
-    if (!this.isRunning) return;
-    
-    console.log('\n🛑 Stopping services...');
-    
-    // Check which compose command to use
-    const hasDockerCompose = await this.commandExists('docker-compose');
-    let exitCode = 1;
-    
-    if (hasDockerCompose) {
-      const proc = Bun.spawnSync(['docker-compose', 'down', '-v'], {
-        stdout: 'inherit',
-        stderr: 'pipe',
-      });
-      exitCode = proc.exitCode ?? 1;
-    }
-    
-    if (exitCode !== 0 && await this.commandExists('docker')) {
-      const proc = Bun.spawnSync(['docker', 'compose', 'down', '-v'], {
-        stdout: 'inherit',
-        stderr: 'inherit',
-      });
-      exitCode = proc.exitCode ?? 1;
-    }
-    
-    if (exitCode === 0) {
-      console.log('  ✅ Services stopped');
-    } else {
-      console.log('  ⚠️  Some services may still be running');
-    }
-    this.isRunning = false;
-  }
-
-  getConfig(): MockServerConfig {
-    return this.config;
-  }
-}
-
-// ============================================================================
 // Default Configuration
 // ============================================================================
 
@@ -1434,12 +1279,10 @@ OUTPUT:
 
 OTHER:
     --quick                 Run quick test (fewer requests)
-    --keep-services         Don't stop docker compose services after benchmark
-    --skip-start            Don't start docker compose services (assume already running)
     --help, -h              Show this help
 
 EXAMPLES:
-    # Default benchmark (all 3 targets, docker compose managed)
+    # Default benchmark (all 3 targets)
     bun run benchmark
 
     # Full benchmark with ALL protocol combinations (16 transformations)
@@ -1480,6 +1323,7 @@ PROTOCOL COMBINATIONS TESTED (when BENCHMARK_ALL_PROTOCOLS=true):
 // ============================================================================
 
 function parseScenarioArgs(
+  scenariosArg?: string,
   concurrencyArg?: string,
   requestsArg?: string,
   promptSizeArg?: string,
@@ -1487,6 +1331,43 @@ function parseScenarioArgs(
   maxTokensArg?: string,
   protocolsArg?: string,
 ): ScenarioConfig[] {
+  // Parse protocols to test (--protocols takes precedence)
+  const testProtocols = protocolsArg === 'openai'
+    ? [PROTOCOL_COMBINATIONS[0]!]
+    : protocolsArg === 'anthropic'
+    ? [PROTOCOL_COMBINATIONS[1]!]
+    : protocolsArg
+    ? PROTOCOL_COMBINATIONS
+    : [PROTOCOL_COMBINATIONS[0]!]; // default to OpenAI→OpenAI only
+  
+  // If --scenarios provided (e.g., '10:1,50:1'), parse it directly
+  if (scenariosArg) {
+    const scenarios: ScenarioConfig[] = [];
+    const pairs = scenariosArg.split(',');
+    
+    for (let i = 0; i < pairs.length; i++) {
+      const [conc, reqs] = pairs[i].split(':');
+      // Divide requests by number of protocols
+      const requestsPerProtocol = Math.max(1, Math.floor(parseInt(reqs) / testProtocols.length));
+      
+      for (const protocol of testProtocols) {
+        const protocolSuffix = testProtocols.length > 1 ? `-${protocol.sourceFormat}` : '';
+        scenarios.push({
+          name: `scenario-${i + 1}${protocolSuffix}`,
+          concurrency: parseInt(conc),
+          requests: requestsPerProtocol,
+          promptSize: promptSizeArg ? parseInt(promptSizeArg) : 100,
+          contextSize: contextSizeArg ? parseInt(contextSizeArg) : 0,
+          maxTokens: maxTokensArg ? parseInt(maxTokensArg) : 50,
+          useStreaming: false,
+          protocol,
+        });
+      }
+    }
+    return scenarios;
+  }
+  
+  // Otherwise use --concurrency and --requests separately
   const concurrencyLevels = concurrencyArg 
     ? concurrencyArg.split(',').map(c => parseInt(c.trim()))
     : [1, 10, 50, 100];
@@ -1498,13 +1379,6 @@ function parseScenarioArgs(
   const promptSize = promptSizeArg ? parseInt(promptSizeArg) : 100;
   const contextSize = contextSizeArg ? parseInt(contextSizeArg) : 0;
   const maxTokens = maxTokensArg ? parseInt(maxTokensArg) : 50;
-  
-  // Parse protocols to test (default: 'all' for full benchmark)
-  const testProtocols = protocolsArg === 'openai'
-    ? [PROTOCOL_COMBINATIONS[0]!]
-    : protocolsArg === 'anthropic'
-    ? [PROTOCOL_COMBINATIONS[1]!]
-    : PROTOCOL_COMBINATIONS; // default to all protocols
   
   const scenarios: ScenarioConfig[] = [];
   const maxLen = Math.max(concurrencyLevels.length, requestCounts.length);
@@ -1560,9 +1434,8 @@ async function main() {
       'skip-streaming': { type: 'boolean' },
       'skip-features': { type: 'boolean' },
       'protocols': { type: 'string' },
+      'scenarios': { type: 'string' },
       'no-error-log': { type: 'boolean' },
-      'keep-services': { type: 'boolean' },
-      'skip-start': { type: 'boolean' },
       'help': { type: 'boolean', short: 'h' },
     },
     strict: false,
@@ -1629,6 +1502,7 @@ async function main() {
   }
   
   config.scenarios = parseScenarioArgs(
+    values['scenarios'] as string | undefined,
     values['concurrency'] as string | undefined,
     values['requests'] as string | undefined,
     values['prompt-size'] as string | undefined,
@@ -1651,13 +1525,6 @@ async function main() {
 
   // Initialize error logger
   const errorLogger = new ErrorLogger(config.logDir, config.logErrors);
-  
-  // Initialize Docker Compose manager
-  const dockerManager = new DockerComposeManager(config.mockServerConfig);
-  
-  // Track whether we should keep services running
-  const keepServices = values['keep-services'] as boolean || false;
-  const skipStart = values['skip-start'] as boolean || false;
 
   const protocolsTested = [...new Set(config.scenarios.map(s => s.protocol?.description || 'OpenAI→OpenAI'))];
   
@@ -1680,29 +1547,7 @@ async function main() {
   console.log(`  Mock error rate: ${config.mockServerConfig.errorRate}`);
   console.log('');
 
-  // Start services
-  if (!skipStart) {
-    await dockerManager.start();
-  } else {
-    console.log('  ⏩ Skipping service startup (--skip-start)');
-  }
-  
-  // Ensure services are stopped on exit (unless --keep-services)
-  if (!keepServices) {
-    process.on('SIGINT', async () => {
-      console.log('\n\nInterrupted by user, stopping services...');
-      await dockerManager.stop();
-      process.exit(130);
-    });
-    process.on('SIGTERM', async () => {
-      await dockerManager.stop();
-    });
-  }
-
-  try {
-    // Initialize error logger
-    
-    // Check gateways
+  // Check gateways
     console.log('\nChecking gateways...');
     const clients: GatewayClient[] = [];
     
@@ -1822,15 +1667,6 @@ async function main() {
     // Auto-generate report
     console.log('\n📊 Generating report...');
     await generatePdfReport(runId);
-    
-  } finally {
-    // Always stop services (unless --keep-services)
-    if (!keepServices) {
-      await dockerManager.stop();
-    } else {
-      console.log('\n🔌 Services left running (use --keep-services to stop them manually)');
-    }
-  }
 }
 
 async function generatePdfReport(runId: string): Promise<void> {
