@@ -468,7 +468,7 @@ def create_streaming_summary_page(pdf, streaming_data: list):
                 target_idx = targets.index(target)
                 box_colors.append(TARGET_COLORS[target_idx % len(TARGET_COLORS)])
     
-    bp = ax2.boxplot(box_data, patch_artist=True, labels=box_labels)
+    bp = ax2.boxplot(box_data, patch_artist=True, tick_labels=box_labels)
     
     # Color the boxes
     for patch, color in zip(bp['boxes'], box_colors):
@@ -551,7 +551,7 @@ def create_streaming_summary_page(pdf, streaming_data: list):
                 target_idx = targets.index(target)
                 box_colors.append(TARGET_COLORS[target_idx % len(TARGET_COLORS)])
     
-    bp = ax2.boxplot(box_data, patch_artist=True, labels=box_labels)
+    bp = ax2.boxplot(box_data, patch_artist=True, tick_labels=box_labels)
     
     for patch, color in zip(bp['boxes'], box_colors):
         patch.set_facecolor(color)

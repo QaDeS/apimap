@@ -296,7 +296,6 @@ const DEFAULT_CONFIG: BenchmarkConfig = {
 };
 
 function parseScenarios(env?: string): ScenarioConfig[] {
-  console.log('[DEBUG] BENCHMARK_SCENARIOS env:', Bun.env.BENCHMARK_SCENARIOS, 'arg:', env);
   const promptSize = parseInt(Bun.env.BENCHMARK_PROMPT_SIZE || '100');
   const contextSize = parseInt(Bun.env.BENCHMARK_CONTEXT_SIZE || '0');
   const maxTokens = parseInt(Bun.env.BENCHMARK_MAX_TOKENS || '500');
