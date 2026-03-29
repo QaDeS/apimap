@@ -167,7 +167,10 @@ def group_results_by_concurrency_and_protocol(results: list, config: dict) -> di
     return grouped
 
 def create_visualizations(data: dict, output_path: Path, config: dict = None):
-    """Create matplotlib visualizations - 1 page per concurrency-protocol combination."""
+    """Create matplotlib visualizations - 1 page per concurrency-protocol combination.
+    
+    Layout: Targets on Y-axis, metrics on X-axis for easy comparison.
+    """
     if not MATPLOTLIB_AVAILABLE:
         return
     
@@ -203,65 +206,71 @@ def create_visualizations(data: dict, output_path: Path, config: dict = None):
             fig.suptitle(f'{protocol} @ {concurrency} Concurrent Requests', 
                         fontsize=16, fontweight='bold', y=0.98)
             
-            # --- Latency subplot ---
+            # --- Latency subplot (horizontal bars) ---
             if lat_results:
-                metrics = ['mean', 'p95', 'p99']
-                metric_labels = ['Mean', 'P95', 'P99']
-                x = np.arange(len(metrics))
-                width = 0.8 / len(targets)
+                metrics = ['mean', 'p95']
+                metric_labels = ['Mean', 'P95']
+                y = np.arange(len(targets))
+                height = 0.6 / len(metrics)
                 
-                for i, target in enumerate(targets):
-                    target_lats = [r for r in lat_results if r['target'] == target]
-                    if target_lats:
-                        stats = calculate_stats(target_lats[0].get('latencies', []))
-                        values = [stats[m] for m in metrics]
-                        offset = width * (i - (len(targets) - 1) / 2)
-                        bars = ax1.bar(x + offset, values, width, label=target,
-                                      color=TARGET_COLORS[i % len(TARGET_COLORS)],
-                                      edgecolor='black', linewidth=1.2)
-                        for bar in bars:
-                            height = bar.get_height()
-                            ax1.text(bar.get_x() + bar.get_width()/2., height,
-                                   f'{height:.1f}',
-                                   ha='center', va='bottom', fontsize=8)
+                for j, metric in enumerate(metrics):
+                    values = []
+                    for target in targets:
+                        target_lats = [r for r in lat_results if r['target'] == target]
+                        if target_lats:
+                            stats = calculate_stats(target_lats[0].get('latencies', []))
+                            values.append(stats[metric])
+                        else:
+                            values.append(0)
+                    
+                    offset = height * (j - (len(metrics) - 1) / 2)
+                    bars = ax1.barh(y + offset, values, height, label=metric_labels[j],
+                                   color=TARGET_COLORS[j % len(TARGET_COLORS)],
+                                   edgecolor='black', linewidth=1.2)
+                    # Add value labels
+                    for i, bar in enumerate(bars):
+                        width_val = bar.get_width()
+                        if width_val > 0:
+                            ax1.text(width_val, bar.get_y() + bar.get_height()/2.,
+                                   f' {width_val:.1f}',
+                                   ha='left', va='center', fontsize=8)
                 
-                ax1.set_ylabel('Milliseconds (ms)', fontsize=11, fontweight='bold')
+                ax1.set_xlabel('Milliseconds (ms)', fontsize=11, fontweight='bold')
                 ax1.set_title('Latency (Lower is Better)', fontsize=12, fontweight='bold')
-                ax1.set_xticks(x)
-                ax1.set_xticklabels(metric_labels)
-                ax1.legend(fontsize=10)
-                ax1.grid(axis='y', alpha=0.3, linestyle='--')
+                ax1.set_yticks(y)
+                ax1.set_yticklabels(targets)
+                ax1.legend(fontsize=10, loc='lower right')
+                ax1.grid(axis='x', alpha=0.3, linestyle='--')
                 ax1.set_axisbelow(True)
             
-            # --- Throughput subplot ---
+            # --- Throughput subplot (horizontal bars) ---
             if tp_results:
-                target_throughputs = []
-                target_labels = []
-                target_colors = []
+                y = np.arange(len(targets))
+                throughputs = []
                 
-                for i, target in enumerate(targets):
+                for target in targets:
                     target_tp = [r for r in tp_results if r['target'] == target]
                     if target_tp:
-                        target_throughputs.append(target_tp[0]['requestsPerSecond'])
-                        target_labels.append(target)
-                        target_colors.append(TARGET_COLORS[i % len(TARGET_COLORS)])
+                        throughputs.append(target_tp[0]['requestsPerSecond'])
+                    else:
+                        throughputs.append(0)
                 
-                if target_throughputs:
-                    x = np.arange(len(target_labels))
-                    bars = ax2.bar(x, target_throughputs, color=target_colors,
-                                  edgecolor='black', linewidth=1.2, width=0.6)
-                    for bar in bars:
-                        height = bar.get_height()
-                        ax2.text(bar.get_x() + bar.get_width()/2., height,
-                               f'{height:.1f}',
-                               ha='center', va='bottom', fontsize=9)
-                    
-                    ax2.set_ylabel('Requests per Second', fontsize=11, fontweight='bold')
-                    ax2.set_title('Throughput (Higher is Better)', fontsize=12, fontweight='bold')
-                    ax2.set_xticks(x)
-                    ax2.set_xticklabels(target_labels, fontsize=10)
-                    ax2.grid(axis='y', alpha=0.3, linestyle='--')
-                    ax2.set_axisbelow(True)
+                bars = ax2.barh(y, throughputs, color=[TARGET_COLORS[i % len(TARGET_COLORS)] for i in range(len(targets))],
+                              edgecolor='black', linewidth=1.2, height=0.6)
+                # Add value labels
+                for i, bar in enumerate(bars):
+                    width_val = bar.get_width()
+                    if width_val > 0:
+                        ax2.text(width_val, bar.get_y() + bar.get_height()/2.,
+                               f' {width_val:.1f}',
+                               ha='left', va='center', fontsize=9)
+                
+                ax2.set_xlabel('Requests per Second', fontsize=11, fontweight='bold')
+                ax2.set_title('Throughput (Higher is Better)', fontsize=12, fontweight='bold')
+                ax2.set_yticks(y)
+                ax2.set_yticklabels(targets)
+                ax2.grid(axis='x', alpha=0.3, linestyle='--')
+                ax2.set_axisbelow(True)
             
             plt.tight_layout(rect=[0, 0, 1, 0.96])  # Make room for suptitle
             pdf.savefig(fig, dpi=100)
