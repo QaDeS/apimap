@@ -45,5 +45,17 @@ trap cleanup INT TERM EXIT
 # Run benchmark with the benchmark profile, passing all arguments
 docker compose -f "$SCRIPT_DIR/docker-compose.yml" --profile benchmark run --rm benchmark "$@"
 
+BENCHMARK_EXIT_CODE=$?
+
+if [ $BENCHMARK_EXIT_CODE -eq 0 ]; then
+    echo ""
+    echo "📊 Generating visualization report..."
+    docker compose -f "$SCRIPT_DIR/docker-compose.yml" --profile visualize run --rm visualize 2>/dev/null || {
+        echo "⚠️  Report generation skipped (visualize.py may not be available)"
+    }
+fi
+
 echo "✅ Benchmark complete!"
 trap - INT TERM EXIT
+
+exit $BENCHMARK_EXIT_CODE

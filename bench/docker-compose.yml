@@ -217,6 +217,7 @@ services:
       - ./container-entrypoint.sh:/app/container-entrypoint.sh:ro
       - ./results:/app/results
       - ./reports:/app/reports
+      - ./logs:/app/logs
     env_file:
       - .env
     environment:
