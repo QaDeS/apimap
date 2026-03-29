@@ -1933,6 +1933,34 @@ const app = new Elysia()
       ],
     };
   })
+  
+  // LM Studio compatible /models endpoint (alias for /v1/models)
+  .get('/models', ({ request }) => {
+    const startTime = (request as Request & { _startTime?: number })._startTime || performance.now();
+    const requestId = generateRequestId();
+    
+    requestLogger.logRequest({
+      timestamp: new Date().toISOString(),
+      method: 'GET',
+      path: '/models',
+      provider: 'openai',
+      requestId,
+      durationMs: performance.now() - startTime,
+      statusCode: 200,
+    });
+    
+    return {
+      object: 'list',
+      data: [
+        { id: 'gpt-4o-mini', object: 'model', created: 1677610602, owned_by: 'openai' },
+        { id: 'gpt-4o', object: 'model', created: 1677610602, owned_by: 'openai' },
+        { id: 'claude-3-haiku', object: 'model', created: 1677610602, owned_by: 'anthropic' },
+        { id: 'claude-3-opus', object: 'model', created: 1677610602, owned_by: 'anthropic' },
+        { id: 'deepseek-chat', object: 'model', created: 1677610602, owned_by: 'deepseek' },
+        { id: 'deepseek-reasoner', object: 'model', created: 1677610602, owned_by: 'deepseek' },
+      ],
+    };
+  })
 
   // OpenAI-compatible endpoint
   .post('/v1/chat/completions', async ({ body, request }) => {
