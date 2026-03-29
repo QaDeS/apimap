@@ -61,22 +61,76 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # PostgreSQL for LiteLLM
+  litellm-db:
+    image: postgres:16-alpine
+    container_name: apibench-litellm-db
+    environment:
+      POSTGRES_DB: litellm
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: litellm
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d litellm -U litellm"]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+    networks:
+      - apibench-network
+
   # LiteLLM Proxy Server
   litellm:
     image: ghcr.io/berriai/litellm:main-stable
     container_name: apibench-litellm
     ports:
       - "${LITELLM_PORT:-4000}:${LITELLM_PORT:-4000}"
-    volumes:
-      - ./configs/litellm_config.yaml:/app/config.yaml:ro
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_API_KEY:-sk-test-key}
       - OPENAI_API_KEY=mock-key
       - ANTHROPIC_API_KEY=mock-key
       - MOCK_SERVER_URL=${MOCK_SERVER_URL:-http://mock-server:9999}
-    command: ["--config", "/app/config.yaml", "--port", "${LITELLM_PORT:-4000}", "--host", "0.0.0.0"]
+      - DATABASE_URL=postgresql://litellm:litellm@litellm-db:5432/litellm
+      - STORE_MODEL_IN_DB=True
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat > /tmp/config.yaml << 'EOF'
+        model_list:
+          - model_name: gpt-4o-mini
+            litellm_params:
+              model: openai/gpt-4o-mini
+              api_base: http://mock-server:9999/v1
+              api_key: mock-key
+          - model_name: gpt-4o
+            litellm_params:
+              model: openai/gpt-4o
+              api_base: http://mock-server:9999/v1
+              api_key: mock-key
+          - model_name: claude-3-haiku
+            litellm_params:
+              model: anthropic/claude-3-haiku-20240307
+              api_base: http://mock-server:9999/v1
+              api_key: mock-key
+          - model_name: claude-3-opus
+            litellm_params:
+              model: anthropic/claude-3-opus-20240229
+              api_base: http://mock-server:9999/v1
+              api_key: mock-key
+        litellm_settings:
+          drop_params: True
+          telemetry: False
+        router_settings:
+          routing_strategy: simple-shuffle
+          timeout: 30
+        general_settings:
+          master_key: ${LITELLM_API_KEY:-sk-test-key}
+        health_check:
+          enabled: True
+        EOF
+        exec litellm --config /tmp/config.yaml --port ${LITELLM_PORT:-4000} --host 0.0.0.0
     depends_on:
       mock-server:
+        condition: service_healthy
+      litellm-db:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "sh", "-c", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:${LITELLM_PORT:-4000}/health/liveliness')\""]
