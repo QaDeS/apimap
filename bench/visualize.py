@@ -153,133 +153,123 @@ def print_text_report(data: dict, config: dict = None):
     print("\n" + "="*70)
 
 
+def group_results_by_concurrency_and_protocol(results: list, config: dict) -> dict:
+    """Group results by (concurrency, protocol) tuple."""
+    grouped = {}
+    for r in results:
+        scenario_name = r.get('scenario', '')
+        concurrency = get_scenario_concurrency(scenario_name, config)
+        protocol = get_protocol_from_scenario(scenario_name, config)
+        key = (concurrency, protocol)
+        if key not in grouped:
+            grouped[key] = []
+        grouped[key].append(r)
+    return grouped
+
 def create_visualizations(data: dict, output_path: Path, config: dict = None):
-    """Create matplotlib visualizations with side-by-side bar charts."""
+    """Create matplotlib visualizations - 1 page per concurrency-protocol combination."""
     if not MATPLOTLIB_AVAILABLE:
         return
     
+    if config is None:
+        config = data.get('config', {})
+    
     with PdfPages(output_path) as pdf:
-        # Aggregate latency data by target (across all scenarios)
-        latency_by_target = {}
-        for r in data.get('latency', []):
-            target = r['target']
-            if target not in latency_by_target:
-                latency_by_target[target] = []
-            latency_by_target[target].extend(r.get('latencies', []))
+        latency_data = data.get('latency', [])
+        throughput_data = data.get('throughput', [])
         
-        # Calculate aggregated stats
-        target_stats = {}
-        for target, latencies in latency_by_target.items():
-            target_stats[target] = calculate_stats(latencies)
+        # Group by (concurrency, protocol)
+        latency_grouped = group_results_by_concurrency_and_protocol(latency_data, config)
+        throughput_grouped = group_results_by_concurrency_and_protocol(throughput_data, config)
         
-        targets = sorted(target_stats.keys())  # Consistent ordering
-        num_targets = len(targets)
+        # Get all unique (concurrency, protocol) combinations
+        all_keys = sorted(set(list(latency_grouped.keys()) + list(throughput_grouped.keys())))
         
-        # Page 1: Side-by-side Latency Comparison
-        if targets:
-            fig, ax = plt.subplots(figsize=(10, 6))
+        # Page per (concurrency, protocol) combination
+        for concurrency, protocol in all_keys:
+            lat_results = latency_grouped.get((concurrency, protocol), [])
+            tp_results = throughput_grouped.get((concurrency, protocol), [])
             
-            metrics = ['mean', 'p95', 'p99']
-            metric_labels = ['Mean', 'P95', 'P99']
-            x = np.arange(len(metrics))
+            if not lat_results and not tp_results:
+                continue
             
-            # Dynamic bar width based on number of targets
-            width = 0.8 / num_targets
+            # Get targets
+            targets = sorted(set(r['target'] for r in lat_results + tp_results))
+            if not targets:
+                continue
             
-            for i, target in enumerate(targets):
-                values = [target_stats[target][m] for m in metrics]
-                # Center the bars around each x position
-                offset = width * (i - (num_targets - 1) / 2)
-                bars = ax.bar(x + offset, values, width, label=target, color=TARGET_COLORS[i % len(TARGET_COLORS)], 
-                             edgecolor='black', linewidth=1.2)
-                # Add value labels on bars
-                for bar in bars:
-                    height = bar.get_height()
-                    ax.text(bar.get_x() + bar.get_width()/2., height,
-                           f'{height:.1f}',
-                           ha='center', va='bottom', fontsize=9)
+            # Create figure with 2 subplots (latency and throughput)
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+            fig.suptitle(f'{protocol} @ {concurrency} Concurrent Requests', 
+                        fontsize=16, fontweight='bold', y=0.98)
             
-            ax.set_xlabel('Latency Metric', fontsize=12, fontweight='bold')
-            ax.set_ylabel('Milliseconds (ms)', fontsize=12, fontweight='bold')
-            ax.set_title('Latency Comparison by Target\n(Lower is Better)', 
-                        fontsize=14, fontweight='bold', pad=20)
-            ax.set_xticks(x)
-            ax.set_xticklabels(metric_labels)
-            ax.legend(fontsize=11)
-            ax.grid(axis='y', alpha=0.3, linestyle='--')
-            ax.set_axisbelow(True)
+            # --- Latency subplot ---
+            if lat_results:
+                metrics = ['mean', 'p95', 'p99']
+                metric_labels = ['Mean', 'P95', 'P99']
+                x = np.arange(len(metrics))
+                width = 0.8 / len(targets)
+                
+                for i, target in enumerate(targets):
+                    target_lats = [r for r in lat_results if r['target'] == target]
+                    if target_lats:
+                        stats = calculate_stats(target_lats[0].get('latencies', []))
+                        values = [stats[m] for m in metrics]
+                        offset = width * (i - (len(targets) - 1) / 2)
+                        bars = ax1.bar(x + offset, values, width, label=target,
+                                      color=TARGET_COLORS[i % len(TARGET_COLORS)],
+                                      edgecolor='black', linewidth=1.2)
+                        for bar in bars:
+                            height = bar.get_height()
+                            ax1.text(bar.get_x() + bar.get_width()/2., height,
+                                   f'{height:.1f}',
+                                   ha='center', va='bottom', fontsize=8)
+                
+                ax1.set_ylabel('Milliseconds (ms)', fontsize=11, fontweight='bold')
+                ax1.set_title('Latency (Lower is Better)', fontsize=12, fontweight='bold')
+                ax1.set_xticks(x)
+                ax1.set_xticklabels(metric_labels)
+                ax1.legend(fontsize=10)
+                ax1.grid(axis='y', alpha=0.3, linestyle='--')
+                ax1.set_axisbelow(True)
             
-            plt.tight_layout()
+            # --- Throughput subplot ---
+            if tp_results:
+                target_throughputs = []
+                target_labels = []
+                target_colors = []
+                
+                for i, target in enumerate(targets):
+                    target_tp = [r for r in tp_results if r['target'] == target]
+                    if target_tp:
+                        target_throughputs.append(target_tp[0]['requestsPerSecond'])
+                        target_labels.append(target)
+                        target_colors.append(TARGET_COLORS[i % len(TARGET_COLORS)])
+                
+                if target_throughputs:
+                    x = np.arange(len(target_labels))
+                    bars = ax2.bar(x, target_throughputs, color=target_colors,
+                                  edgecolor='black', linewidth=1.2, width=0.6)
+                    for bar in bars:
+                        height = bar.get_height()
+                        ax2.text(bar.get_x() + bar.get_width()/2., height,
+                               f'{height:.1f}',
+                               ha='center', va='bottom', fontsize=9)
+                    
+                    ax2.set_ylabel('Requests per Second', fontsize=11, fontweight='bold')
+                    ax2.set_title('Throughput (Higher is Better)', fontsize=12, fontweight='bold')
+                    ax2.set_xticks(x)
+                    ax2.set_xticklabels(target_labels, fontsize=10)
+                    ax2.grid(axis='y', alpha=0.3, linestyle='--')
+                    ax2.set_axisbelow(True)
+            
+            plt.tight_layout(rect=[0, 0, 1, 0.96])  # Make room for suptitle
             pdf.savefig(fig, dpi=100)
             plt.close()
         
-        # Page 2+: Throughput by Concurrency Level (separate page per concurrency)
-        throughput_data = data.get('throughput', [])
-        if throughput_data and config:
-            targets_in_data = sorted(set(r['target'] for r in throughput_data))
-            num_targets_tp = len(targets_in_data)
-            
-            # Group scenarios by concurrency level
-            concurrency_groups = {}
-            all_scenarios = set(r['scenario'] for r in throughput_data)
-            for scenario in all_scenarios:
-                concurrency = get_scenario_concurrency(scenario, config)
-                if concurrency not in concurrency_groups:
-                    concurrency_groups[concurrency] = []
-                concurrency_groups[concurrency].append(scenario)
-            
-            # Create a page for each concurrency level
-            for concurrency in sorted(concurrency_groups.keys()):
-                scenarios_in_group = sorted(concurrency_groups[concurrency])
-                
-                # Get protocol descriptions for labels
-                protocol_labels = [get_scenario_protocol_description(s, config) for s in scenarios_in_group]
-                
-                # Get total requests for this concurrency level (from first scenario)
-                total_requests = 0
-                for scenario in config.get('scenarios', []):
-                    if scenario.get('name') == scenarios_in_group[0]:
-                        total_requests = scenario.get('requests', 0)
-                        break
-                
-                fig, ax = plt.subplots(figsize=(10, max(5, len(scenarios_in_group) * 0.8)))
-                
-                y = np.arange(len(scenarios_in_group))
-                height = 0.6 / num_targets_tp
-                
-                for i, target in enumerate(targets_in_data):
-                    throughputs = []
-                    for scenario in scenarios_in_group:
-                        value = 0
-                        for r in throughput_data:
-                            if r['target'] == target and r['scenario'] == scenario:
-                                value = r['requestsPerSecond']
-                                break
-                        throughputs.append(value)
-                    
-                    offset = height * (i - (num_targets_tp - 1) / 2)
-                    bars = ax.barh(y + offset, throughputs, height, label=target, 
-                                  color=TARGET_COLORS[i % len(TARGET_COLORS)], edgecolor='black', linewidth=1.2)
-                    # Add value labels
-                    for bar in bars:
-                        width_val = bar.get_width()
-                        ax.text(width_val, bar.get_y() + bar.get_height()/2.,
-                               f' {width_val:.1f}',
-                               ha='left', va='center', fontsize=9)
-                
-                ax.set_ylabel('Protocol', fontsize=12, fontweight='bold')
-                ax.set_xlabel('Requests per Second', fontsize=12, fontweight='bold')
-                ax.set_title(f'Throughput Comparison at {concurrency} Concurrent Requests (N={total_requests})\n(Higher is Better)', 
-                            fontsize=14, fontweight='bold', pad=20)
-                ax.set_yticks(y)
-                ax.set_yticklabels(protocol_labels, fontsize=10)
-                ax.legend(fontsize=11, loc='lower right')
-                ax.grid(axis='x', alpha=0.3, linestyle='--')
-                ax.set_axisbelow(True)
-                
-                plt.tight_layout()
-                pdf.savefig(fig, dpi=100)
-                plt.close()
+        # Summary page at the end
+        if all_keys:
+            create_summary_page(pdf, data, all_keys)
         elif throughput_data:
             # Fallback: simple grouped chart if no config available
             scenarios = sorted(set(r['scenario'] for r in throughput_data))
@@ -323,70 +313,10 @@ def create_visualizations(data: dict, output_path: Path, config: dict = None):
             pdf.savefig(fig, dpi=100)
             plt.close()
         
-        # Page 3: Streaming Comparison (if available)
+        # Streaming summary page (if available)
         streaming_data = data.get('streaming', [])
         if streaming_data:
-            fig, ax = plt.subplots(figsize=(10, 6))
-            
-            targets_stream = sorted(set(r['target'] for r in streaming_data))
-            num_targets_stream = len(targets_stream)
-            metrics_stream = ['timeToFirstTokenMs', 'tokensPerSec']
-            metric_labels_stream = ['TTFT (ms)', 'Tokens/sec']
-            x = np.arange(len(metric_labels_stream))
-            width = 0.8 / num_targets_stream
-            
-            for i, target in enumerate(targets_stream):
-                values = []
-                for r in streaming_data:
-                    if r['target'] == target:
-                        values = [r['timeToFirstTokenMs'], r['tokensPerSec']]
-                        break
-                
-                if values:
-                    offset = width * (i - (num_targets_stream - 1) / 2)
-                    bars = ax.bar(x + offset, values, width, label=target,
-                                 color=TARGET_COLORS[i % len(TARGET_COLORS)], edgecolor='black', linewidth=1.2)
-                    for bar in bars:
-                        height = bar.get_height()
-                        ax.text(bar.get_x() + bar.get_width()/2., height,
-                               f'{height:.1f}',
-                               ha='center', va='bottom', fontsize=9)
-            
-            ax.set_ylabel('Value', fontsize=12, fontweight='bold')
-            ax.set_title('Streaming Performance Comparison\n(Lower TTFT is better, Higher Tokens/sec is better)', 
-                        fontsize=14, fontweight='bold', pad=20)
-            ax.set_xticks(x)
-            ax.set_xticklabels(metric_labels_stream)
-            ax.legend(fontsize=11)
-            ax.grid(axis='y', alpha=0.3, linestyle='--')
-            ax.set_axisbelow(True)
-            
-            plt.tight_layout()
-            pdf.savefig(fig, dpi=100)
-            plt.close()
-        
-        # Page 4: Latency Distribution (Box Plot)
-        if targets:
-            fig, ax = plt.subplots(figsize=(10, 6))
-            
-            data_for_box = [latency_by_target[t] for t in targets]
-            box_plot = ax.boxplot(data_for_box, tick_labels=targets, patch_artist=True)
-            
-            colors_box = [TARGET_COLORS[i % len(TARGET_COLORS)] for i in range(len(targets))]
-            for patch, color in zip(box_plot['boxes'], colors_box):
-                patch.set_facecolor(color)
-                patch.set_alpha(0.7)
-            
-            ax.set_xlabel('Target', fontsize=12, fontweight='bold')
-            ax.set_ylabel('Latency (ms)', fontsize=12, fontweight='bold')
-            ax.set_title('Latency Distribution (All Scenarios)', 
-                        fontsize=14, fontweight='bold', pad=20)
-            ax.grid(axis='y', alpha=0.3, linestyle='--')
-            ax.set_axisbelow(True)
-            
-            plt.tight_layout()
-            pdf.savefig(fig, dpi=100)
-            plt.close()
+            create_streaming_summary_page(pdf, streaming_data)
         
         # Page 5: Summary Table
         fig, ax = plt.subplots(figsize=(10, 6))
@@ -430,7 +360,113 @@ def create_visualizations(data: dict, output_path: Path, config: dict = None):
         pdf.savefig(fig, dpi=150)
         plt.close()
     
-    print(f"📊 Visualizations saved to: {output_path}")
+    print(f"📊 Visualizations saved to: {output_path}
+
+
+def create_summary_page(pdf, data: dict, all_keys: list):
+    """Create a summary table page at the end."""
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.axis('off')
+    
+    # Build summary data
+    table_data = [['Concurrency', 'Protocol', 'Target', 'Latency Mean', 'Throughput']]
+    
+    for concurrency, protocol in sorted(all_keys):
+        # Find latency and throughput for this combination
+        lat_results = [r for r in data.get('latency', []) 
+                      if get_scenario_concurrency(r.get('scenario', ''), data.get('config', {})) == concurrency
+                      and get_protocol_from_scenario(r.get('scenario', ''), data.get('config', {})) == protocol]
+        tp_results = [r for r in data.get('throughput', []) 
+                     if get_scenario_concurrency(r.get('scenario', ''), data.get('config', {})) == concurrency
+                     and get_protocol_from_scenario(r.get('scenario', ''), data.get('config', {})) == protocol]
+        
+        targets = sorted(set(r['target'] for r in lat_results + tp_results))
+        
+        for target in targets:
+            lat = next((r for r in lat_results if r['target'] == target), None)
+            tp = next((r for r in tp_results if r['target'] == target), None)
+            
+            lat_mean = f"{calculate_stats(lat.get('latencies', []))['mean']:.1f} ms" if lat else 'N/A'
+            tp_val = f"{tp['requestsPerSecond']:.1f} req/s" if tp else 'N/A'
+            
+            table_data.append([str(concurrency), protocol, target, lat_mean, tp_val])
+    
+    table = ax.table(cellText=table_data, loc='center', cellLoc='center',
+                    colWidths=[0.12, 0.28, 0.15, 0.2, 0.25])
+    table.auto_set_font_size(False)
+    table.set_fontsize(9)
+    table.scale(1, 1.8)
+    
+    # Style header row
+    for i in range(len(table_data[0])):
+        table[(0, i)].set_facecolor('#4a90d9')
+        table[(0, i)].set_text_props(weight='bold', color='white')
+    
+    # Alternate row colors
+    for i in range(1, len(table_data)):
+        color = '#f0f0f0' if i % 2 == 0 else 'white'
+        for j in range(len(table_data[0])):
+            table[(i, j)].set_facecolor(color)
+    
+    ax.set_title('Benchmark Summary by Concurrency & Protocol', 
+                fontsize=14, fontweight='bold', pad=20)
+    
+    plt.tight_layout()
+    pdf.savefig(fig, dpi=150)
+    plt.close()
+
+
+def create_streaming_summary_page(pdf, streaming_data: list):
+    """Create a streaming performance summary page."""
+    fig, ax = plt.subplots(figsize=(12, 6))
+    
+    # Group by protocol
+    by_protocol = {}
+    for r in streaming_data:
+        protocol = r.get('protocol', 'Unknown')
+        if protocol not in by_protocol:
+            by_protocol[protocol] = []
+        by_protocol[protocol].append(r)
+    
+    protocols = sorted(by_protocol.keys())
+    targets = sorted(set(r['target'] for r in streaming_data))
+    
+    x = np.arange(len(protocols))
+    width = 0.35
+    
+    # Plot tokens/sec by protocol for each target
+    for i, target in enumerate(targets):
+        values = []
+        for protocol in protocols:
+            results = [r for r in by_protocol[protocol] if r['target'] == target]
+            if results:
+                values.append(results[0]['tokensPerSec'])
+            else:
+                values.append(0)
+        
+        offset = width * (i - (len(targets) - 1) / 2)
+        bars = ax.bar(x + offset, values, width, label=target,
+                     color=TARGET_COLORS[i % len(TARGET_COLORS)],
+                     edgecolor='black', linewidth=1.2)
+        for bar in bars:
+            height = bar.get_height()
+            if height > 0:
+                ax.text(bar.get_x() + bar.get_width()/2., height,
+                       f'{height:.0f}',
+                       ha='center', va='bottom', fontsize=8)
+    
+    ax.set_ylabel('Tokens per Second', fontsize=12, fontweight='bold')
+    ax.set_title('Streaming Performance by Protocol (Higher is Better)', 
+                fontsize=14, fontweight='bold', pad=20)
+    ax.set_xticks(x)
+    ax.set_xticklabels(protocols, rotation=45, ha='right', fontsize=10)
+    ax.legend(fontsize=11)
+    ax.grid(axis='y', alpha=0.3, linestyle='--')
+    ax.set_axisbelow(True)
+    
+    plt.tight_layout()
+    pdf.savefig(fig, dpi=100)
+    plt.close()
 
 
 def main():
