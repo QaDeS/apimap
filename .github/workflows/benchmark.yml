@@ -261,6 +261,37 @@ jobs:
         else
           echo "No results available" >> $GITHUB_STEP_SUMMARY
         fi
+    
+    - name: Prepare GitHub Pages deployment
+      if: always()
+      run: |
+        # Create a proper Pages structure with the showcase website
+        mkdir -p pages_deploy
+        
+        # Copy the showcase index.html
+        cp bench/reports/index.html pages_deploy/
+        
+        # Copy any generated PDF reports
+        if [ -d "bench/reports" ]; then
+          cp bench/reports/*.pdf pages_deploy/ 2>/dev/null || true
+        fi
+        
+        # Copy latest benchmark JSON for dynamic loading
+        if [ -d "bench/results" ]; then
+          LATEST_JSON=$(ls -t bench/results/benchmark_*.json 2>/dev/null | head -1)
+          if [ -n "$LATEST_JSON" ]; then
+            cp "$LATEST_JSON" pages_deploy/benchmark_latest.json
+          fi
+        fi
+        
+        echo "Pages structure prepared:"
+        ls -la pages_deploy/
+    
+    - name: Upload to GitHub Pages
+      if: always()
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: pages_deploy/
 
   # Run quick benchmark on PRs (builds from source)
   benchmark-quick:
@@ -429,13 +460,14 @@ jobs:
           cat "$LATEST_MD" >> $GITHUB_STEP_SUMMARY
         fi
 
-  # Run full benchmark on schedule or manual trigger (builds from source)
+  # Run full benchmark on push to main, schedule, or manual trigger
   benchmark-full-manual:
     runs-on: ubuntu-latest
     needs: [prepare-image, build-apimap]
     if: |
       needs.prepare-image.outputs.use_ci_image == 'false' && 
-      (github.event_name == 'schedule' || 
+      (github.event_name == 'push' ||
+       github.event_name == 'schedule' || 
        (github.event_name == 'workflow_dispatch' && inputs.benchmark_type == 'full'))
 
     steps:
@@ -560,17 +592,42 @@ jobs:
           echo "No results available" >> $GITHUB_STEP_SUMMARY
         fi
 
-    - name: Upload to GitHub Pages
-      if: github.event_name == 'schedule' && always()
+    - name: Prepare GitHub Pages deployment
+      if: always()
+      run: |
+        # Create a proper Pages structure with the showcase website
+        mkdir -p pages_deploy
+        
+        # Copy the showcase index.html
+        cp bench/reports/index.html pages_deploy/
+        
+        # Copy any generated PDF reports
+        if [ -d "bench/reports" ]; then
+          cp bench/reports/*.pdf pages_deploy/ 2>/dev/null || true
+        fi
+        
+        # Copy latest benchmark JSON for dynamic loading
+        if [ -d "bench/results" ]; then
+          LATEST_JSON=$(ls -t bench/results/benchmark_*.json 2>/dev/null | head -1)
+          if [ -n "$LATEST_JSON" ]; then
+            cp "$LATEST_JSON" pages_deploy/benchmark_latest.json
+          fi
+        fi
+        
+        echo "Pages structure prepared:"
+        ls -la pages_deploy/
+    
+    - name: Upload Pages artifact
+      if: always()
       uses: actions/upload-pages-artifact@v3
       with:
-        path: bench/reports/
+        path: pages_deploy/
 
   # Deploy benchmark results to GitHub Pages
-  deploy-results:
+  deploy-pages:
     runs-on: ubuntu-latest
-    needs: benchmark-full-manual
-    if: github.event_name == 'schedule' && always()
+    needs: [benchmark-full-ci, benchmark-full-manual]
+    if: always() && (needs.benchmark-full-ci.result == 'success' || needs.benchmark-full-manual.result == 'success')
     
     permissions:
       pages: write

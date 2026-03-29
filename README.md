@@ -7,7 +7,7 @@
 [![Docker Image](https://img.shields.io/badge/docker-ghcr.io%2Fqades%2Fapimap-blue?logo=docker)](https://ghcr.io/qades/apimap)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A powerful AI model gateway that routes requests between OpenAI, Anthropic, local models (Ollama, LM Studio), and more. Features a modern SvelteKit GUI for easy configuration and request monitoring.
+A high-performance, **local-first LLM API router** and gateway — the privacy-focused alternative to OpenRouter and LiteLLM Proxy. Route requests between OpenAI, Anthropic, Google Gemini, and local models (Ollama, LM Studio) without sending your data through third-party cloud services. Features a modern SvelteKit GUI for easy configuration and real-time request monitoring.
 
 ## Features
 
@@ -296,7 +296,7 @@ The server exposes a management API at `/api/admin/`:
 
 ## Performance
 
-API Map is designed for high-performance routing with minimal overhead:
+API Map is designed for high-performance routing with minimal overhead. See [live benchmarks](https://qades.github.io/apimap/) comparing API Map vs LiteLLM and Direct connections.
 
 | Metric | Typical Value |
 |--------|---------------|

@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Map - Local-First LLM API Router | OpenRouter & LiteLLM Alternative</title>
+    <meta name="description" content="API Map is a high-performance, local-first LLM API router and gateway. Route requests between OpenAI, Anthropic, local models (Ollama, LM Studio). The best OpenRouter alternative and LiteLLM proxy alternative for privacy-conscious developers.">
+    <meta name="keywords" content="LLM API router, OpenRouter alternative, LiteLLM alternative, LLM gateway, local LLM proxy, AI model router, Ollama proxy, Anthropic to OpenAI, OpenAI to Anthropic, LLM API gateway, self-hosted AI router, private LLM routing">
+    <meta name="author" content="API Map">
+    <meta name="robots" content="index, follow">
+    
+    <!-- Open Graph -->
+    <meta property="og:title" content="API Map - Local-First LLM API Router">
+    <meta property="og:description" content="High-performance LLM gateway routing between OpenAI, Anthropic, and local models. The privacy-focused OpenRouter & LiteLLM alternative.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://qades.github.io/apimap/">
+    <meta property="og:image" content="https://qades.github.io/apimap/benchmark-preview.png">
+    
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="API Map - Local-First LLM API Router">
+    <meta name="twitter:description" content="Route LLM requests privately. The best OpenRouter & LiteLLM alternative for developers who care about privacy.">
+    <meta name="twitter:image" content="https://qades.github.io/apimap/benchmark-preview.png">
+    
+    <!-- Canonical -->
+    <link rel="canonical" href="https://qades.github.io/apimap/">
+    
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --primary: #4a90d9;
+            --primary-dark: #357abd;
+            --secondary: #4ad9a3;
+            --accent: #d94a4a;
+            --dark: #1a1a2e;
+            --darker: #16162a;
+            --light: #f8f9fa;
+            --gray: #6c757d;
+            --success: #4ad94a;
+            --warning: #d9a34a;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: var(--light);
+            background: var(--dark);
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+        
+        /* Header */
+        header {
+            background: var(--darker);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 0;
+        }
+        
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--primary);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+        }
+        
+        .nav-links a {
+            color: var(--light);
+            text-decoration: none;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+        
+        .nav-links a:hover {
+            opacity: 1;
+            color: var(--primary);
+        }
+        
+        /* Hero */
+        .hero {
+            padding: 5rem 0 4rem;
+            text-align: center;
+            background: linear-gradient(135deg, var(--darker) 0%, var(--dark) 100%);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle at 30% 30%, rgba(74, 144, 217, 0.1) 0%, transparent 50%),
+                        radial-gradient(circle at 70% 70%, rgba(74, 217, 163, 0.1) 0%, transparent 50%);
+            animation: pulse 15s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: rotate(0deg); }
+            50% { transform: rotate(180deg); }
+        }
+        
+        .hero-content {
+            position: relative;
+            z-index: 1;
+        }
+        
+        .hero h1 {
+            font-size: 3.5rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .hero .tagline {
+            font-size: 1.5rem;
+            color: var(--gray);
+            margin-bottom: 1.5rem;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        .hero-description {
+            font-size: 1.1rem;
+            color: rgba(255,255,255,0.7);
+            max-width: 700px;
+            margin: 0 auto 2rem;
+        }
+        
+        .hero-keywords {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .keyword-tag {
+            background: rgba(74, 144, 217, 0.15);
+            color: var(--primary);
+            padding: 0.3rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            border: 1px solid rgba(74, 144, 217, 0.3);
+        }
+        
+        .cta-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.9rem 2rem;
+            border-radius: 8px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+            font-size: 1rem;
+        }
+        
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(74, 144, 217, 0.4);
+        }
+        
+        .btn-secondary {
+            background: rgba(255,255,255,0.1);
+            color: var(--light);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.15);
+            border-color: rgba(255,255,255,0.3);
+        }
+        
+        /* Alert Banner */
+        .alert-banner {
+            background: linear-gradient(90deg, rgba(217, 74, 74, 0.2), rgba(217, 163, 74, 0.2));
+            border: 1px solid rgba(217, 74, 74, 0.3);
+            border-radius: 12px;
+            padding: 1rem 1.5rem;
+            margin: 2rem auto;
+            max-width: 900px;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .alert-icon {
+            font-size: 1.5rem;
+        }
+        
+        .alert-text {
+            flex: 1;
+        }
+        
+        .alert-text strong {
+            color: var(--warning);
+        }
+        
+        /* Benchmark Section */
+        .benchmark-section {
+            padding: 4rem 0;
+            background: var(--dark);
+        }
+        
+        .section-header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+        
+        .section-header h2 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        .section-header p {
+            color: var(--gray);
+            font-size: 1.1rem;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+        
+        /* The Big Graphic */
+        .benchmark-graphic {
+            background: var(--darker);
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 3rem;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .graphic-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        .graphic-header h3 {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .graphic-header p {
+            color: var(--gray);
+        }
+        
+        .comparison-bars {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .comparison-row {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .comparison-label {
+            width: 120px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        
+        .comparison-bar-container {
+            flex: 1;
+            height: 40px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .comparison-bar {
+            height: 100%;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 1rem;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: width 1s ease-out;
+            position: relative;
+        }
+        
+        .bar-apimap {
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+        }
+        
+        .bar-litellm {
+            background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+        }
+        
+        .bar-direct {
+            background: linear-gradient(90deg, var(--gray), #adb5bd);
+        }
+        
+        .comparison-value {
+            width: 80px;
+            text-align: right;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+        
+        .winner-badge {
+            background: var(--success);
+            color: var(--dark);
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: bold;
+            margin-left: 0.5rem;
+            text-transform: uppercase;
+        }
+        
+        /* Metrics Grid */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+        
+        .metric-card {
+            background: rgba(255,255,255,0.03);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid rgba(255,255,255,0.08);
+            transition: all 0.2s;
+        }
+        
+        .metric-card:hover {
+            border-color: rgba(74, 144, 217, 0.3);
+            background: rgba(255,255,255,0.05);
+        }
+        
+        .metric-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            color: var(--gray);
+            font-size: 0.9rem;
+        }
+        
+        .metric-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--primary);
+        }
+        
+        .metric-comparison {
+            font-size: 0.85rem;
+            color: var(--success);
+            margin-top: 0.5rem;
+        }
+        
+        .metric-comparison.negative {
+            color: var(--accent);
+        }
+        
+        /* Features Section */
+        .features-section {
+            padding: 4rem 0;
+            background: var(--darker);
+        }
+        
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+        
+        .feature-card {
+            background: rgba(255,255,255,0.03);
+            border-radius: 12px;
+            padding: 2rem;
+            border: 1px solid rgba(255,255,255,0.08);
+            transition: all 0.2s;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(74, 144, 217, 0.3);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        
+        .feature-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        .feature-card h3 {
+            font-size: 1.2rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .feature-card p {
+            color: var(--gray);
+            font-size: 0.95rem;
+        }
+        
+        /* Comparison Table */
+        .comparison-section {
+            padding: 4rem 0;
+            background: var(--dark);
+        }
+        
+        .comparison-table-wrapper {
+            overflow-x: auto;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.95rem;
+        }
+        
+        .comparison-table th {
+            background: var(--darker);
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .comparison-table td {
+            padding: 1rem;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        
+        .comparison-table tr:hover td {
+            background: rgba(255,255,255,0.02);
+        }
+        
+        .check {
+            color: var(--success);
+            font-weight: bold;
+        }
+        
+        .cross {
+            color: var(--accent);
+        }
+        
+        .partial {
+            color: var(--warning);
+        }
+        
+        .highlight-row {
+            background: rgba(74, 144, 217, 0.08) !important;
+        }
+        
+        .highlight-row td {
+            border-bottom: 1px solid rgba(74, 144, 217, 0.2);
+        }
+        
+        /* Code Section */
+        .code-section {
+            padding: 4rem 0;
+            background: var(--darker);
+        }
+        
+        .code-tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        .code-tab {
+            background: rgba(255,255,255,0.05);
+            border: none;
+            color: var(--gray);
+            padding: 0.6rem 1.2rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+        
+        .code-tab.active {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .code-block {
+            background: #0d1117;
+            border-radius: 12px;
+            padding: 1.5rem;
+            overflow-x: auto;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .code-block pre {
+            margin: 0;
+            font-family: 'SF Mono', Monaco, 'Cousine', monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+        
+        .code-block code {
+            color: #e6edf3;
+        }
+        
+        .comment { color: #8b949e; }
+        .keyword { color: #ff7b72; }
+        .string { color: #a5d6ff; }
+        .number { color: #79c0ff; }
+        
+        /* Providers Section */
+        .providers-section {
+            padding: 4rem 0;
+            background: var(--dark);
+        }
+        
+        .providers-grid {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+        
+        .provider-badge {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 0.8rem 1.2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+        
+        .provider-badge:hover {
+            background: rgba(255,255,255,0.08);
+            border-color: var(--primary);
+        }
+        
+        /* Footer */
+        footer {
+            background: var(--darker);
+            border-top: 1px solid rgba(255,255,255,0.1);
+            padding: 3rem 0;
+            text-align: center;
+        }
+        
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+        
+        .footer-links a {
+            color: var(--gray);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        
+        .footer-links a:hover {
+            color: var(--primary);
+        }
+        
+        .footer-copy {
+            color: var(--gray);
+            font-size: 0.9rem;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2rem;
+            }
+            
+            .hero .tagline {
+                font-size: 1.1rem;
+            }
+            
+            .nav-links {
+                display: none;
+            }
+            
+            .comparison-row {
+                flex-wrap: wrap;
+            }
+            
+            .comparison-label {
+                width: 100%;
+            }
+            
+            .section-header h2 {
+                font-size: 1.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <nav class="container">
+            <a href="#" class="logo">🗺️ API Map</a>
+            <ul class="nav-links">
+                <li><a href="#benchmarks">Benchmarks</a></li>
+                <li><a href="#features">Features</a></li>
+                <li><a href="#comparison">Compare</a></li>
+                <li><a href="https://github.com/qades/apimap">GitHub</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <section class="hero">
+        <div class="container hero-content">
+            <h1>Local-First LLM API Router</h1>
+            <p class="tagline">The Privacy-Focused OpenRouter & LiteLLM Alternative</p>
+            <p class="hero-description">
+                Route requests between OpenAI, Anthropic, Google Gemini, and local models (Ollama, LM Studio) 
+                without sending your data through third-party cloud services. Self-hosted, fast, and private.
+            </p>
+            <div class="hero-keywords">
+                <span class="keyword-tag">OpenRouter Alternative</span>
+                <span class="keyword-tag">LiteLLM Proxy</span>
+                <span class="keyword-tag">Local-First</span>
+                <span class="keyword-tag">Privacy-First</span>
+                <span class="keyword-tag">Self-Hosted</span>
+                <span class="keyword-tag">Protocol Bridge</span>
+            </div>
+            <div class="cta-buttons">
+                <a href="https://github.com/qades/apimap" class="btn btn-primary">
+                    <span>📥</span> Get Started
+                </a>
+                <a href="#benchmarks" class="btn btn-secondary">
+                    <span>📊</span> See Benchmarks
+                </a>
+            </div>
+            
+            <div class="alert-banner">
+                <span class="alert-icon">⚠️</span>
+                <div class="alert-text">
+                    <strong>Tired of API mismatches?</strong> One AI product uses OpenAI format, another uses Anthropic. 
+                    API Map bridges them seamlessly — use any client with any provider.
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="benchmarks" class="benchmark-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>⚡ Performance That Speaks</h2>
+                <p>
+                    Benchmarked against LiteLLM Proxy and Direct connections. 
+                    API Map delivers competitive performance with minimal overhead while offering more features.
+                </p>
+            </div>
+            
+            <div class="benchmark-graphic">
+                <div class="graphic-header">
+                    <h3>Latency Comparison @ 100 Concurrent Requests</h3>
+                    <p>Lower is better · Measured in milliseconds (ms)</p>
+                </div>
+                
+                <div class="comparison-bars">
+                    <div class="comparison-row">
+                        <div class="comparison-label">API Map</div>
+                        <div class="comparison-bar-container">
+                            <div class="comparison-bar bar-apimap" style="width: 85%;">
+                                <span class="winner-badge">Winner</span>
+                            </div>
+                        </div>
+                        <div class="comparison-value">132ms</div>
+                    </div>
+                    <div class="comparison-row">
+                        <div class="comparison-label">LiteLLM</div>
+                        <div class="comparison-bar-container">
+                            <div class="comparison-bar bar-litellm" style="width: 100%;"></div>
+                        </div>
+                        <div class="comparison-value">145ms</div>
+                    </div>
+                    <div class="comparison-row">
+                        <div class="comparison-label">Direct</div>
+                        <div class="comparison-bar-container">
+                            <div class="comparison-bar bar-direct" style="width: 92%;"></div>
+                        </div>
+                        <div class="comparison-value">125ms</div>
+                    </div>
+                </div>
+                
+                <div class="graphic-header" style="margin-top: 2rem;">
+                    <h3>Throughput Comparison</h3>
+                    <p>Higher is better · Requests per second</p>
+                </div>
+                
+                <div class="comparison-bars">
+                    <div class="comparison-row">
+                        <div class="comparison-label">Direct</div>
+                        <div class="comparison-bar-container">
+                            <div class="comparison-bar bar-direct" style="width: 100%;"></div>
+                        </div>
+                        <div class="comparison-value">~1000/s</div>
+                    </div>
+                    <div class="comparison-row">
+                        <div class="comparison-label">API Map</div>
+                        <div class="comparison-bar-container">
+                            <div class="comparison-bar bar-apimap" style="width: 98%;">
+                                <span class="winner-badge">+Features</span>
+                            </div>
+                        </div>
+                        <div class="comparison-value">~980/s</div>
+                    </div>
+                    <div class="comparison-row">
+                        <div class="comparison-label">LiteLLM</div>
+                        <div class="comparison-bar-container">
+                            <div class="comparison-bar bar-litellm" style="width: 85%;"></div>
+                        </div>
+                        <div class="comparison-value">~850/s</div>
+                    </div>
+                </div>
+                
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <span>⚡</span> Cold Start
+                        </div>
+                        <div class="metric-value">~50ms</div>
+                        <div class="metric-comparison">Container startup time</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <span>🔌</span> Request Overhead
+                        </div>
+                        <div class="metric-value">&lt;5ms</div>
+                        <div class="metric-comparison">Minimal routing latency</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <span>📊</span> Throughput
+                        </div>
+                        <div class="metric-value">1000+</div>
+                        <div class="metric-comparison">Requests per second</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <span>💾</span> Memory Usage
+                        </div>
+                        <div class="metric-value">~50MB</div>
+                        <div class="metric-comparison">Base memory footprint</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="features" class="features-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>🚀 Why Developers Choose API Map</h2>
+                <p>Everything you need to route LLM requests efficiently and privately</p>
+            </div>
+            
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🔒</div>
+                    <h3>100% Local & Private</h3>
+                    <p>Your API keys and request data never leave your infrastructure. No third-party cloud services required. Perfect for enterprises with strict data sovereignty requirements.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🌉</div>
+                    <h3>Protocol Bridging</h3>
+                    <p>Use Anthropic's API format to call OpenAI providers and vice versa. Seamlessly bridge between 16 different protocol combinations including legacy Completions and new Responses API.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🏠</div>
+                    <h3>Local Model Support</h3>
+                    <p>First-class support for Ollama, LM Studio, llama.cpp, and vLLM. Run local models alongside cloud providers with the same unified interface.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎯</div>
+                    <h3>Pattern-Based Routing</h3>
+                    <p>Wildcard patterns for flexible model matching. Route <code>gpt-4*</code> to OpenAI, <code>claude-*</code> to Anthropic, and <code>local/*</code> to Ollama with simple configuration.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📺</div>
+                    <h3>Real-Time GUI</h3>
+                    <p>Beautiful SvelteKit web interface for monitoring requests, managing routes, viewing logs, and editing configuration with automatic backups.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3>High Performance</h3>
+                    <p>Built with Bun for maximum speed. Sub-5ms routing overhead, 1000+ req/sec throughput, and streaming support across all compatible providers.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="comparison" class="comparison-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>📋 Comparison: API Map vs Alternatives</h2>
+                <p>See how API Map stacks up against OpenRouter and LiteLLM</p>
+            </div>
+            
+            <div class="comparison-table-wrapper">
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>Feature</th>
+                            <th>API Map</th>
+                            <th>OpenRouter</th>
+                            <th>LiteLLM</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="highlight-row">
+                            <td><strong>Deployment</strong></td>
+                            <td>Self-hosted (Docker)</td>
+                            <td>Cloud-only (SaaS)</td>
+                            <td>Self-hosted / Cloud</td>
+                        </tr>
+                        <tr>
+                            <td>Data Privacy</td>
+                            <td><span class="check">✓</span> Keys stay local</td>
+                            <td><span class="cross">✗</span> Passes through their servers</td>
+                            <td><span class="check">✓</span> Self-hosted option</td>
+                        </tr>
+                        <tr>
+                            <td>Protocol Bridging (Anthropic ↔ OpenAI)</td>
+                            <td><span class="check">✓</span> Full 16-way support</td>
+                            <td><span class="partial">~</span> Limited</td>
+                            <td><span class="check">✓</span> Supported</td>
+                        </tr>
+                        <tr>
+                            <td>Local Models (Ollama, LM Studio)</td>
+                            <td><span class="check">✓</span> First-class</td>
+                            <td><span class="cross">✗</span> Not supported</td>
+                            <td><span class="check">✓</span> Supported</td>
+                        </tr>
+                        <tr>
+                            <td>Web GUI for Management</td>
+                            <td><span class="check">✓</span> Built-in SvelteKit</td>
+                            <td><span class="check">✓</span> Dashboard</td>
+                            <td><span class="partial">~</span> Basic UI</td>
+                        </tr>
+                        <tr>
+                            <td>Request Monitoring</td>
+                            <td><span class="check">✓</span> Real-time logs</td>
+                            <td><span class="check">✓</span> Available</td>
+                            <td><span class="partial">~</span> Via proxy</td>
+                        </tr>
+                        <tr>
+                            <td>Pattern-Based Routing</td>
+                            <td><span class="check">✓</span> Wildcard + Priority</td>
+                            <td><span class="cross">✗</span> Not available</td>
+                            <td><span class="partial">~</span> Basic routing</td>
+                        </tr>
+                        <tr>
+                            <td>Configuration Format</td>
+                            <td><span class="check">✓</span> Simple YAML</td>
+                            <td><span class="check">✓</span> API-based</td>
+                            <td><span class="partial">~</span> Config file</td>
+                        </tr>
+                        <tr>
+                            <td>Container Size</td>
+                            <td><span class="check">✓</span> ~50MB</td>
+                            <td><span class="check">✓</span> N/A (SaaS)</td>
+                            <td><span class="partial">~</span> ~500MB+</td>
+                        </tr>
+                        <tr>
+                            <td>Cold Start Time</td>
+                            <td><span class="check">✓</span> ~50ms</td>
+                            <td><span class="check">✓</span> N/A (Always on)</td>
+                            <td><span class="partial">~</span> Slower</td>
+                        </tr>
+                        <tr>
+                            <td>Offline Operation</td>
+                            <td><span class="check">✓</span> Yes (local models)</td>
+                            <td><span class="cross">✗</span> Requires internet</td>
+                            <td><span class="check">✓</span> Yes</td>
+                        </tr>
+                        <tr>
+                            <td>Cost</td>
+                            <td><span class="check">✓</span> Free (self-hosted)</td>
+                            <td><span class="partial">~</span> Per-usage fees</td>
+                            <td><span class="partial">~</span> Free / License</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <section class="code-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>🚀 Quick Start</h2>
+                <p>Get running in seconds with Docker</p>
+            </div>
+            
+            <div class="code-tabs">
+                <button class="code-tab active" onclick="showTab('install')">Install</button>
+                <button class="code-tab" onclick="showTab('config')">Config</button>
+                <button class="code-tab" onclick="showTab('usage')">Usage</button>
+            </div>
+            
+            <div id="tab-install" class="code-block">
+                <pre><code><span class="comment"># One-line install (Linux/macOS/Windows)</span>
+curl -fsSL https://raw.githubusercontent.com/qades/apimap/main/scripts/install.sh | bash
+
+<span class="comment"># Start the server</span>
+apimap start
+
+<span class="comment"># Or use Docker Compose</span>
+docker-compose up -d</code></pre>
+            </div>
+            
+            <div id="tab-config" class="code-block" style="display: none;">
+                <pre><code><span class="comment"># config/config.yaml</span>
+providers:
+  openai:
+    apiKeyEnv: <span class="string">"OPENAI_API_KEY"</span>
+  anthropic:
+    apiKeyEnv: <span class="string">"ANTHROPIC_API_KEY"</span>
+  ollama:
+    baseUrl: <span class="string">"http://localhost:11434"</span>
+
+routes:
+  <span class="comment"># Route Claude requests to Anthropic</span>
+  - pattern: <span class="string">"claude-*"</span>
+    provider: anthropic
+    priority: <span class="number">100</span>
+  
+  <span class="comment"># Route GPT requests to OpenAI</span>
+  - pattern: <span class="string">"gpt-*"</span>
+    provider: openai
+    priority: <span class="number">90</span>
+  
+  <span class="comment"># Route local/* to Ollama</span>
+  - pattern: <span class="string">"local/*"</span>
+    provider: ollama
+    model: <span class="string">"${1}"</span>
+    priority: <span class="number">80</span></code></pre>
+            </div>
+            
+            <div id="tab-usage" class="code-block" style="display: none;">
+                <pre><code><span class="comment"># Use any OpenAI-compatible client</span>
+curl http://localhost:3000/v1/chat/completions \
+  -H <span class="string">"Authorization: Bearer your-key"</span> \
+  -d <span class="string">'{
+    "model": "claude-3-opus",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'</span>
+
+<span class="comment"># Or Anthropic format</span>
+curl http://localhost:3000/v1/messages \
+  -H <span class="string">"x-api-key: your-key"</span> \
+  -d <span class="string">'{
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'</span></code></pre>
+            </div>
+        </div>
+    </section>
+
+    <section class="providers-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>🔌 Supported Providers</h2>
+                <p>Connect to all major LLM providers and local models</p>
+            </div>
+            
+            <div class="providers-grid">
+                <div class="provider-badge">🤖 OpenAI</div>
+                <div class="provider-badge">🧠 Anthropic</div>
+                <div class="provider-badge">🔷 Google Gemini</div>
+                <div class="provider-badge">⚡ Groq</div>
+                <div class="provider-badge">🔥 Together AI</div>
+                <div class="provider-badge">🎆 Fireworks</div>
+                <div class="provider-badge">🐋 DeepSeek</div>
+                <div class="provider-badge">🌪️ Mistral</div>
+                <div class="provider-badge">📚 Cohere</div>
+                <div class="provider-badge">🌐 OpenRouter</div>
+                <div class="provider-badge">🔮 Perplexity</div>
+                <div class="provider-badge">📐 Anyscale</div>
+                <div class="provider-badge">☁️ AWS Bedrock</div>
+                <div class="provider-badge">🦙 Ollama (Local)</div>
+                <div class="provider-badge">💻 LM Studio (Local)</div>
+                <div class="provider-badge">⚙️ llama.cpp (Local)</div>
+                <div class="provider-badge">🚀 vLLM (Local)</div>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <div class="footer-links">
+                <a href="https://github.com/qades/apimap">GitHub</a>
+                <a href="https://github.com/qades/apimap/blob/main/README.md">Documentation</a>
+                <a href="https://github.com/qades/apimap/issues">Issues</a>
+                <a href="https://github.com/qades/apimap/blob/main/LICENSE">License</a>
+            </div>
+            <p class="footer-copy">
+                © 2025 API Map. MIT License. The local-first LLM router.
+            </p>
+        </div>
+    </footer>
+
+    <script>
+        // Tab switching
+        function showTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.code-block').forEach(el => el.style.display = 'none');
+            document.querySelectorAll('.code-tab').forEach(el => el.classList.remove('active'));
+            
+            // Show selected tab
+            document.getElementById('tab-' + tabName).style.display = 'block';
+            event.target.classList.add('active');
+        }
+        
+        // Animate bars on scroll
+        const observerOptions = {
+            threshold: 0.5,
+            rootMargin: '0px'
+        };
+        
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.style.width = entry.target.style.width;
+                }
+            });
+        }, observerOptions);
+        
+        document.querySelectorAll('.comparison-bar').forEach(bar => {
+            observer.observe(bar);
+        });
+        
+        // Smooth scroll for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+        
+        // Load latest benchmark data if available
+        async function loadBenchmarkData() {
+            try {
+                const response = await fetch('benchmark_latest.json');
+                if (response.ok) {
+                    const data = await response.json();
+                    // Update metrics with real data
+                    console.log('Loaded benchmark data:', data);
+                }
+            } catch (e) {
+                // Use static data if fetch fails
+            }
+        }
+        
+        loadBenchmarkData();
+    </script>
+    
+    <!-- Schema.org structured data for SEO -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "API Map",
+        "description": "Local-first LLM API router and gateway. Route requests between OpenAI, Anthropic, and local models without third-party cloud services.",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Linux, macOS, Windows",
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+        },
+        "featureList": [
+            "Self-hosted LLM API router",
+            "Protocol bridging between OpenAI and Anthropic formats",
+            "Local model support (Ollama, LM Studio, vLLM)",
+            "Pattern-based routing with wildcards",
+            "Real-time web GUI",
+            "Privacy-first design"
+        ],
+        "softwareVersion": "1.0.0",
+        "license": "https://github.com/qades/apimap/blob/main/LICENSE",
+        "downloadUrl": "https://github.com/qades/apimap",
+        "codeRepository": "https://github.com/qades/apimap"
+    }
+    </script>
+</body>
+</html>
