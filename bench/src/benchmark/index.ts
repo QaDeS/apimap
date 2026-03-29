@@ -1243,8 +1243,8 @@ TARGETS:
     --skip-targets TARGETS  Comma-separated list of targets to skip (e.g., 'litellm,apimap')
 
 SCENARIOS:
-    --concurrency LEVELS    Comma-separated concurrency levels (default: 1,10,50,100)
-    --requests COUNTS       Comma-separated request counts (default: 50,100,200,300)
+    --concurrency LEVELS    Comma-separated concurrency levels (default: 1,5,10,20)
+    --requests COUNTS       Comma-separated request counts (default: 20,50,100,200)
     --prompt-size CHARS     Prompt size in characters (default: 100)
     --context-size CHARS    Context size in characters (default: 0)
     --max-tokens N          Max tokens in response (default: 50)
@@ -1362,18 +1362,18 @@ function parseScenarioArgs(
   // Otherwise use --concurrency and --requests separately
   // --quick: 2 light scenarios
   // --full: 4 scenarios with all protocols, more requests
-  // default: 4 scenarios
+  // default: 4 scenarios (kept at reasonable levels for gateway stability)
   const concurrencyLevels = concurrencyArg 
     ? concurrencyArg.split(',').map(c => parseInt(c.trim()))
     : isQuick 
     ? [1, 10]
-    : [1, 10, 50, 100];
+    : [1, 5, 10, 20];
     
   const requestCounts = requestsArg
     ? requestsArg.split(',').map(r => parseInt(r.trim()))
     : isQuick
     ? [10, 20]
-    : [50, 100, 200, 300];
+    : [20, 50, 100, 200];
     
   const promptSize = promptSizeArg ? parseInt(promptSizeArg) : 100;
   const contextSize = contextSizeArg ? parseInt(contextSizeArg) : 0;
