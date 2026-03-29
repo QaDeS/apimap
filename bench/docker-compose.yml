@@ -200,22 +200,13 @@ services:
     volumes:
       - ./results:/app/results
       - ./reports:/app/reports
+    env_file:
+      - .env
     environment:
-      - LITELLM_URL=${LITELLM_URL:-http://litellm:4000}
-      - APIMAP_URL=${APIMAP_URL:-http://apimap:3000}
-      - MOCK_SERVER_URL=${MOCK_SERVER_URL:-http://mock-server:9999}
-      - LITELLM_API_KEY=${LITELLM_API_KEY:-sk-test-key}
-      - APIMAP_API_KEY=${APIMAP_API_KEY:-test-key}
-      # Benchmark configuration
-      - BENCHMARK_WARMUP=${BENCHMARK_WARMUP:-5}
-      # Scenarios: "concurrency:requests,concurrency:requests,..."
-      # Supports up to 100 concurrency
-      - BENCHMARK_SCENARIOS=${BENCHMARK_SCENARIOS:-1:50,10:100,50:200,100:300}
-      # Prompt/Context sizes (chars)
-      - BENCHMARK_PROMPT_SIZE=${BENCHMARK_PROMPT_SIZE:-100}
-      - BENCHMARK_CONTEXT_SIZE=${BENCHMARK_CONTEXT_SIZE:-0}
-      - BENCHMARK_MAX_TOKENS=${BENCHMARK_MAX_TOKENS:-50}
+      # Additional benchmark-specific settings (overrides .env if needed)
       - WAIT_FOR_SERVICES=true
+    # Services are started by docker-compose, so skip startup inside the container
+    command: ["--skip-start"]
     depends_on:
       mock-server:
         condition: service_healthy

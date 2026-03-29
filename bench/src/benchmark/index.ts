@@ -329,8 +329,9 @@ class DockerComposeManager {
   }
 
   private async waitForServices(): Promise<void> {
+    // Use internal Docker network URLs (not localhost) for container-to-container communication
     const services = [
-      { name: 'Mock Server', url: `${Bun.env.MOCK_SERVER_DIRECT_URL || 'http://localhost:9999'}/health` },
+      { name: 'Mock Server', url: `${Bun.env.MOCK_SERVER_URL || 'http://mock-server:9999'}/health` },
       { name: 'LiteLLM', url: `${Bun.env.LITELLM_URL || 'http://localhost:4000'}/health/liveliness`, headers: { 'Authorization': `Bearer ${Bun.env.LITELLM_API_KEY || 'sk-test-key'}` } },
       { name: 'API Map', url: `${Bun.env.APIMAP_URL || 'http://localhost:3000'}/v1/models`, headers: { 'Authorization': `Bearer ${Bun.env.APIMAP_API_KEY || 'test-key'}` } },
     ];
@@ -420,7 +421,8 @@ const DEFAULT_CONFIG: BenchmarkConfig = {
     },
     {
       name: 'Direct',
-      url: Bun.env.MOCK_SERVER_DIRECT_URL || 'http://localhost:9999',
+      // Use MOCK_SERVER_URL for internal Docker network access
+      url: Bun.env.MOCK_SERVER_URL || 'http://mock-server:9999',
       apiKey: 'test-key',
       enabled: true,
     },
