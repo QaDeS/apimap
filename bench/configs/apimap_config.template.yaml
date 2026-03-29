@@ -29,15 +29,16 @@ schemes:
     path: /health
 
 # Provider configuration - pointing to mock server
+# Note: baseUrl should NOT include /v1 suffix - each format adds its own path
 providers:
   mock-openai:
-    baseUrl: __MOCK_SERVER_API_BASE__
+    baseUrl: __MOCK_SERVER_URL__
     apiKey: "mock-key"
     timeout: 180
     format: openai-chat
 
   mock-anthropic:
-    baseUrl: __MOCK_SERVER_API_BASE__
+    baseUrl: __MOCK_SERVER_URL__
     apiKey: "mock-key"
     timeout: 180
     format: anthropic-messages

@@ -170,11 +170,10 @@ services:
       - OPENAI_API_KEY=mock-key
       - ANTHROPIC_API_KEY=mock-key
       - MOCK_SERVER_URL=${MOCK_SERVER_URL:-http://mock-server:9999}
-      - MOCK_SERVER_API_BASE=${MOCK_SERVER_API_BASE:-http://mock-server:9999/v1}
       - CONFIG_PATH=/tmp/config.yaml
     entrypoint: ["/bin/sh", "-c"]
     command:
-      - sed -e "s|__MOCK_SERVER_URL__|$$MOCK_SERVER_URL|g" -e "s|__MOCK_SERVER_API_BASE__|$$MOCK_SERVER_API_BASE|g" /app/config/config.yaml.template > /tmp/config.yaml && exec /usr/local/bin/docker-entrypoint.sh
+      - sed -e "s|__MOCK_SERVER_URL__|$$MOCK_SERVER_URL|g" /app/config/config.yaml.template > /tmp/config.yaml && exec /usr/local/bin/docker-entrypoint.sh
     depends_on:
       mock-server:
         condition: service_healthy
