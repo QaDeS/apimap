@@ -1,6 +1,7 @@
 name: Benchmark
 
 on:
+  # Run on pushes to main/master that affect relevant paths
   push:
     branches: [main, master]
     paths:
@@ -8,34 +9,79 @@ on:
       - 'src/**'
       - 'Dockerfile'
       - '.github/workflows/benchmark.yml'
+  # Also trigger after CI workflow completes successfully on main/master
+  workflow_run:
+    workflows: [CI]
+    branches: [main, master]
+    types: [completed]
+  # Run on PRs affecting benchmark-relevant paths
   pull_request:
     branches: [main, master]
     paths:
       - 'bench/**'
       - 'src/**'
       - 'Dockerfile'
+  # Weekly full benchmark
   schedule:
-    # Run weekly on Sundays at 00:00 UTC
     - cron: '0 0 * * 0'
+  # Manual trigger
   workflow_dispatch:
     inputs:
       benchmark_type:
         description: 'Benchmark type'
         required: true
-        default: 'quick'
+        default: 'full'
         type: choice
         options:
           - quick
           - full
+      use_ci_image:
+        description: 'Use CI-built image from ghcr.io'
+        required: false
+        default: false
+        type: boolean
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/apibench
 
 jobs:
-  # Build API Map from source for testing
+  # Determine which image to use and prepare it
+  prepare-image:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.set-image.outputs.image_tag }}
+      use_ci_image: ${{ steps.set-image.outputs.use_ci_image }}
+      
+    steps:
+    - name: Determine image source
+      id: set-image
+      run: |
+        # Use CI image on push to main/master (after CI completes), or when manually requested
+        if [[ "${{ github.event_name }}" == "workflow_run" && "${{ github.event.workflow_run.conclusion }}" == "success" ]]; then
+          echo "use_ci_image=true" >> $GITHUB_OUTPUT
+          echo "image_tag=ghcr.io/${{ github.repository }}:${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "Using CI-built image from ghcr.io"
+        elif [[ "${{ github.event_name }}" == "push" && ("${{ github.ref }}" == "refs/heads/main" || "${{ github.ref }}" == "refs/heads/master") ]]; then
+          # Push to main - try to use CI image if available
+          echo "use_ci_image=true" >> $GITHUB_OUTPUT
+          echo "image_tag=ghcr.io/${{ github.repository }}:${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "Using CI-built image from ghcr.io"
+        elif [[ "${{ inputs.use_ci_image }}" == "true" ]]; then
+          echo "use_ci_image=true" >> $GITHUB_OUTPUT
+          echo "image_tag=ghcr.io/${{ github.repository }}:${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "Using CI-built image from ghcr.io (manual)"
+        else
+          echo "use_ci_image=false" >> $GITHUB_OUTPUT
+          echo "image_tag=apimap:benchmark-test" >> $GITHUB_OUTPUT
+          echo "Will build image from source"
+        fi
+
+  # Build API Map from source (only when not using CI image)
   build-apimap:
     runs-on: ubuntu-latest
+    needs: prepare-image
+    if: needs.prepare-image.outputs.use_ci_image == 'false'
     
     steps:
     - name: Checkout repository
@@ -65,11 +111,172 @@ jobs:
         path: /tmp/apimap-benchmark.tar
         retention-days: 1
 
-  # Run quick benchmark on PR/push
+  # Pull and verify CI-built image (only when using CI image)
+  pull-ci-image:
+    runs-on: ubuntu-latest
+    needs: prepare-image
+    if: needs.prepare-image.outputs.use_ci_image == 'true'
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Pull CI-built image
+      run: |
+        docker pull ${{ needs.prepare-image.outputs.image_tag }}
+        docker tag ${{ needs.prepare-image.outputs.image_tag }} apibench-apimap:dev
+        docker save apibench-apimap:dev > /tmp/apimap-benchmark.tar
+
+    - name: Upload image artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: apimap-benchmark-image
+        path: /tmp/apimap-benchmark.tar
+        retention-days: 1
+
+  # Run FULL benchmark on push to main or workflow_run (uses CI image)
+  benchmark-full-ci:
+    runs-on: ubuntu-latest
+    needs: [prepare-image, pull-ci-image]
+    if: |
+      needs.prepare-image.outputs.use_ci_image == 'true' && 
+      (github.event_name == 'push' || github.event_name == 'workflow_run' || 
+       (github.event_name == 'workflow_dispatch' && inputs.benchmark_type == 'full'))
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Download API Map image
+      uses: actions/download-artifact@v4
+      with:
+        name: apimap-benchmark-image
+        path: /tmp
+
+    - name: Load API Map image
+      run: |
+        docker load < /tmp/apimap-benchmark.tar
+
+    - name: Create logs directory with proper permissions
+      run: |
+        mkdir -p bench/logs
+        chmod -R 777 bench/logs
+
+    - name: Start services and run full benchmark
+      run: |
+        cd bench
+        # Create .env file for docker-compose
+        cat > .env << 'EOF'
+        MOCK_SERVER_PORT=9999
+        LITELLM_PORT=4000
+        APIMAP_PORT=3000
+        APIMAP_GUI_PORT=3001
+        LITELLM_API_KEY=sk-test-key
+        APIMAP_API_KEY=test-key
+        MOCK_SERVER_URL=http://mock-server:9999
+        EOF
+        
+        # Start all services in background using the CI image
+        docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d mock-server litellm apimap
+        
+        # Wait for services to be healthy
+        echo "Waiting for services to be healthy..."
+        sleep 10
+        
+        # Wait for mock-server
+        for i in {1..30}; do
+          if curl -s http://localhost:9999/health > /dev/null; then
+            echo "✅ Mock server is ready"
+            break
+          fi
+          echo "  Waiting for mock-server (attempt $i/30)..."
+          sleep 2
+        done
+        
+        # Wait for API Map
+        for i in {1..30}; do
+          if curl -s http://localhost:3000/v1/models > /dev/null; then
+            echo "✅ API Map is ready"
+            break
+          fi
+          echo "  Waiting for API Map (attempt $i/30)..."
+          sleep 2
+        done
+        
+        # Wait for LiteLLM
+        for i in {1..30}; do
+          if curl -s http://localhost:4000/health/liveliness > /dev/null; then
+            echo "✅ LiteLLM is ready"
+            break
+          fi
+          echo "  Waiting for LiteLLM (attempt $i/30)..."
+          sleep 2
+        done
+        
+        echo ""
+        echo "All services are ready! Running full benchmark..."
+        echo ""
+        
+        # Run the FULL benchmark
+        bun run src/benchmark/index.ts
+      env:
+        APIMAP_IMAGE: apibench-apimap:dev
+        LITELLM_URL: http://localhost:4000
+        APIMAP_URL: http://localhost:3000
+        MOCK_SERVER_URL: http://localhost:9999
+
+    - name: Cleanup services
+      if: always()
+      run: |
+        cd bench
+        docker compose down -v || true
+
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: benchmark-results-full-${{ github.sha }}
+        path: |
+          bench/results/
+          bench/reports/
+        retention-days: 90
+
+    - name: Create benchmark report
+      if: always()
+      run: |
+        echo "# Full Benchmark Report (CI Image: ${{ needs.prepare-image.outputs.image_tag }})" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # Find latest markdown file
+        LATEST_MD=$(ls -t bench/results/*.md 2>/dev/null | head -1)
+        if [ -n "$LATEST_MD" ]; then
+          cat "$LATEST_MD" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "No results available" >> $GITHUB_STEP_SUMMARY
+        fi
+
+  # Run quick benchmark on PRs (builds from source)
   benchmark-quick:
     runs-on: ubuntu-latest
-    needs: build-apimap
-    if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
+    needs: [prepare-image, build-apimap]
+    if: |
+      needs.prepare-image.outputs.use_ci_image == 'false' && 
+      github.event_name == 'pull_request'
 
     steps:
     - name: Checkout repository
@@ -112,8 +319,8 @@ jobs:
         MOCK_SERVER_URL=http://mock-server:9999
         EOF
         
-        # Start all services in background
-        docker compose up -d mock-server litellm apimap
+        # Start all services in background (use CI override, image is already tagged)
+        docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d mock-server litellm apimap
         
         # Wait for services to be healthy
         echo "Waiting for services to be healthy..."
@@ -153,9 +360,10 @@ jobs:
         echo "All services are ready! Running benchmark..."
         echo ""
         
-        # Run the benchmark
+        # Run the quick benchmark
         bun run src/benchmark/index.ts --quick
       env:
+        APIMAP_IMAGE: apimap:benchmark-test
         LITELLM_URL: http://localhost:4000
         APIMAP_URL: http://localhost:3000
         MOCK_SERVER_URL: http://localhost:9999
@@ -227,11 +435,14 @@ jobs:
           cat "$LATEST_MD" >> $GITHUB_STEP_SUMMARY
         fi
 
-  # Run full benchmark weekly or on manual trigger
-  benchmark-full:
+  # Run full benchmark on schedule or manual trigger (builds from source)
+  benchmark-full-manual:
     runs-on: ubuntu-latest
-    needs: build-apimap
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: [prepare-image, build-apimap]
+    if: |
+      needs.prepare-image.outputs.use_ci_image == 'false' && 
+      (github.event_name == 'schedule' || 
+       (github.event_name == 'workflow_dispatch' && inputs.benchmark_type == 'full'))
 
     steps:
     - name: Checkout repository
@@ -275,7 +486,7 @@ jobs:
         EOF
         
         # Start all services in background
-        docker compose up -d mock-server litellm apimap
+        docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d mock-server litellm apimap
         
         # Wait for services to be healthy
         echo "Waiting for services to be healthy..."
@@ -315,9 +526,10 @@ jobs:
         echo "All services are ready! Running benchmark..."
         echo ""
         
-        # Run the benchmark
+        # Run the FULL benchmark
         bun run src/benchmark/index.ts
       env:
+        APIMAP_IMAGE: apimap:benchmark-test
         LITELLM_URL: http://localhost:4000
         APIMAP_URL: http://localhost:3000
         MOCK_SERVER_URL: http://localhost:9999
@@ -361,7 +573,7 @@ jobs:
   # Deploy benchmark results to GitHub Pages
   deploy-results:
     runs-on: ubuntu-latest
-    needs: benchmark-full
+    needs: benchmark-full-manual
     if: github.event_name == 'schedule' && always()
     
     permissions:
