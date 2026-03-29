@@ -318,47 +318,9 @@ def create_visualizations(data: dict, output_path: Path, config: dict = None):
         if streaming_data:
             create_streaming_summary_page(pdf, streaming_data)
         
-        # Page 5: Summary Table
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.axis('off')
-        
-        # Build table data
-        table_data = [['Target', 'Mean (ms)', 'P95 (ms)', 'P99 (ms)', 'Min (ms)', 'Max (ms)']]
-        for target in targets:
-            stats = target_stats[target]
-            table_data.append([
-                target,
-                f"{stats['mean']:.1f}",
-                f"{stats['p95']:.1f}",
-                f"{stats['p99']:.1f}",
-                f"{stats['min']:.1f}",
-                f"{stats['max']:.1f}",
-            ])
-        
-        table = ax.table(cellText=table_data, loc='center', cellLoc='center',
-                        colWidths=[0.2, 0.15, 0.15, 0.15, 0.15, 0.15])
-        table.auto_set_font_size(False)
-        table.set_fontsize(11)
-        table.scale(1, 2)
-        
-        # Style header row
-        for i in range(len(table_data[0])):
-            table[(0, i)].set_facecolor('#4a90d9')
-            table[(0, i)].set_text_props(weight='bold', color='white')
-        
-        # Highlight winner (lowest mean latency)
-        if len(targets) >= 1:
-            means = [target_stats[t]['mean'] for t in targets]
-            winner_idx = means.index(min(means))
-            for i in range(len(table_data[0])):
-                table[(winner_idx + 1, i)].set_facecolor('#d4edda')
-        
-        ax.set_title('Latency Summary\n(Green = Winner)', 
-                    fontsize=14, fontweight='bold', pad=20)
-        
-        plt.tight_layout()
-        pdf.savefig(fig, dpi=150)
-        plt.close()
+        # Summary table page
+        if all_keys:
+            create_summary_page(pdf, data, all_keys)
     
     print(f"📊 Visualizations saved to: {output_path}")
 
