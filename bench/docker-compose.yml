@@ -263,7 +263,7 @@ services:
     working_dir: /app
     command: >
       bash -c "pip install -q matplotlib numpy && 
-               python visualize.py results/ --output /app/reports/benchmark_report.pdf"
+               python visualize.py results/"
     profiles:
       - visualize
     networks:
