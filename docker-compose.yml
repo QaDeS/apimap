@@ -53,8 +53,8 @@ services:
     container_name: apimap
     restart: unless-stopped
     ports:
-      - "${APIMAN_API_PORT:-3000}:3000"
-      - "${APIMAN_GUI_PORT:-3001}:3001"
+      - "${APIMAP_PORT:-3000}:3000"
+      - "${APIMAP_GUI_PORT:-3001}:3001"
     environment:
       # API Keys - set these in your environment or .env file
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
@@ -75,8 +75,8 @@ services:
       
       # Port mapping configuration (for reverse proxy scenarios)
       # Set these if the external port differs from internal port
-      - EXTERNAL_PORT=${EXTERNAL_PORT:-}
-      - EXTERNAL_GUI_PORT=${EXTERNAL_GUI_PORT:-}
+      - EXTERNAL_PORT=${APIMAP_EXTERNAL_PORT:-${APIMAP_PORT:-3000}}
+      - EXTERNAL_GUI_PORT=${APIMAP_EXTERNAL_GUI_PORT:-${APIMAP_GUI_PORT:-3001}}
       
       # Optional: Override internal ports
       # - API_PORT=3000

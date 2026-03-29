@@ -18,139 +18,77 @@ A powerful AI model gateway that routes requests between OpenAI, Anthropic, loca
 - **Configuration Management**: Visual editor for providers, routes, and YAML configuration with automatic backups
 - **Streaming Support**: Full support for streaming responses across all compatible providers
 
-## Installation
+## Quick Start
 
-### Option 1: Docker (Recommended)
+### Option 1: Docker Install Script (Recommended)
 
-The fastest way to get started. Works on Linux, macOS, and Windows.
+The fastest way to get started on Linux, macOS, or Windows:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/qades/apimap/main/scripts/install.sh | bash
 ```
-
-This will:
-- Install API Map to `~/.local/share/apimap`
-- Create proper directories with correct permissions
-- Set up a convenient `apimap` command
-- Optionally configure systemd service (Linux)
 
 Then start the server:
 ```bash
 ~/.local/share/apimap/apimap start
 ```
 
-Or with Docker Compose:
-```bash
-# Create directories with correct permissions
-mkdir -p config logs
-sudo chown -R 1001:1001 config logs  # Linux/macOS
-
-# Set your API keys
-export OPENAI_API_KEY="your-key"
-export ANTHROPIC_API_KEY="your-key"
-
-# Start
-docker-compose up -d
-```
-
-### Option 2: Binary Installation (No Docker)
-
-For systems without Docker, install the standalone binary:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/qades/apimap/main/scripts/install-binary.sh | bash
-```
-
-This requires [Bun](https://bun.sh) (auto-installed if missing). The binary will be built from source.
-
-Then:
-```bash
-apimap start
-```
-
-### Option 3: Manual Installation
-
-See [Development](#development) section below for building from source.
-
-## Quick Start
-
-After installation, access:
+Access:
 - **API**: http://localhost:3000
 - **GUI**: http://localhost:3001
 
-Configure your providers in `config/config.yaml` or through the web GUI.
+The install script creates:
+- `~/.local/share/apimap/config/` - Configuration files
+- `~/.local/share/apimap/logs/` - Request logs
+- `~/.local/share/apimap/apimap` - Convenience command
 
-Example configuration:
-```yaml
-providers:
-  openai:
-    apiKeyEnv: "OPENAI_API_KEY"
-  
-  anthropic:
-    apiKeyEnv: "ANTHROPIC_API_KEY"
+### Option 2: Docker Compose (Manual)
 
-routes:
-  - pattern: "gpt-4*"
-    provider: openai
-    priority: 100
-  
-  - pattern: "claude-3*"
-    provider: anthropic
-    priority: 90
+For more control over the deployment:
 
-defaultProvider: openai
+```bash
+# 1. Clone or download the compose file
+mkdir -p apimap && cd apimap
+curl -O https://raw.githubusercontent.com/qades/apimap/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/qades/apimap/main/.env.example
+
+# 2. Create directories with correct permissions
+mkdir -p config logs
+sudo chown -R 1001:1001 config logs  # Linux/macOS
+
+# 3. Configure your API keys
+cp .env.example .env
+# Edit .env with your API keys
+
+# 4. Start
+docker-compose up -d
 ```
 
-## Project Structure
+### Option 3: From Source (Development)
 
-```
-/home/mk/apimap/
-├── src/                          # Core source code
-│   ├── types/                    # TypeScript type definitions
-│   │   ├── index.ts              # Main types (config, requests, responses)
-│   │   └── internal.ts           # Internal message format
-│   ├── providers/                # Provider implementations
-│   │   ├── base.ts               # Base provider class
-│   │   ├── registry.ts           # Provider registry
-│   │   └── index.ts              # Module exports
-│   ├── transformers/             # Format transformers
-│   │   ├── openai.ts             # OpenAI format transformer
-│   │   ├── anthropic.ts          # Anthropic format transformer
-│   │   └── index.ts              # Transformer registry
-│   ├── config/                   # Configuration management
-│   │   └── manager.ts            # Config manager with backups
-│   ├── logging/                  # Logging system
-│   │   └── index.ts              # Request logging and unrouted capture
-│   ├── router/                   # Request routing
-│   │   └── index.ts              # Pattern matching and routing
-│   ├── server.ts                 # Main server entry
-│   └── index.ts                  # CLI entry point
-├── gui/                          # SvelteKit management GUI
-│   ├── src/
-│   │   ├── lib/
-│   │   │   ├── components/       # Svelte components
-│   │   │   ├── stores/           # Svelte stores
-│   │   │   └── utils/            # API client utilities
-│   │   ├── routes/               # SvelteKit routes
-│   │   ├── app.html
-│   │   └── app.css
-│   ├── static/
-│   ├── package.json
-│   ├── svelte.config.js
-│   └── vite.config.ts
-├── config/                       # Configuration files
-│   ├── config.yaml               # Active configuration
-│   └── backups/                  # Config backups
-├── logs/                         # Request logs
-├── package.json
-├── tsconfig.json
-└── README.md
+For development or custom modifications:
+
+```bash
+# 1. Clone repository
+git clone https://github.com/qades/apimap.git
+cd apimap
+
+# 2. Install dependencies
+bun install
+cd gui && bun install && cd ..
+
+# 3. Build GUI
+bun run build:gui
+
+# 4. Start development server (with hot reload)
+bun run dev
 ```
 
 ## Configuration
 
-### Basic Example
+After installation, configure your providers in `config/config.yaml` or through the web GUI.
 
+Example configuration:
 ```yaml
 server:
   port: 3000
@@ -248,20 +186,67 @@ curl http://localhost:3000/v1/chat/completions \
 
 ### Listing Available Models
 
-The server provides a models endpoint that works like OpenAI's and Anthropic's native endpoints:
-
 ```bash
-# OpenAI format (default)
+# OpenAI format
 curl http://localhost:3000/v1/models \
   -H "Authorization: Bearer your-key"
 
-# Anthropic format (auto-detected by headers)
+# Anthropic format
 curl http://localhost:3000/v1/models \
   -H "x-api-key: your-key" \
   -H "anthropic-version: 2023-06-01"
 ```
 
-The endpoint aggregates models from all configured providers and route patterns.
+## Environment Variables
+
+### Port Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `APIMAP_PORT` | External port for API | 3000 |
+| `APIMAP_GUI_PORT` | External port for GUI | 3001 |
+| `APIMAP_EXTERNAL_PORT` | External port for API (reverse proxy) | Same as APIMAP_PORT |
+| `APIMAP_EXTERNAL_GUI_PORT` | External port for GUI (reverse proxy) | Same as APIMAP_GUI_PORT |
+
+**Note:** Internal container ports (`API_PORT`, `GUI_PORT`) are not user-configurable.
+
+### API Provider Keys
+
+| Variable | Provider |
+|----------|----------|
+| `OPENAI_API_KEY` | OpenAI |
+| `ANTHROPIC_API_KEY` | Anthropic |
+| `GOOGLE_API_KEY` | Google Gemini |
+| `GROQ_API_KEY` | Groq |
+| `TOGETHER_API_KEY` | Together AI |
+| `FIREWORKS_API_KEY` | Fireworks AI |
+| `DEEPSEEK_API_KEY` | DeepSeek |
+| `MISTRAL_API_KEY` | Mistral AI |
+| `COHERE_API_KEY` | Cohere |
+| `OPENROUTER_API_KEY` | OpenRouter |
+| `PERPLEXITY_API_KEY` | Perplexity |
+| `ANYSCALE_API_KEY` | Anyscale |
+| `AWS_ACCESS_KEY_ID` | AWS Bedrock |
+| `AWS_SECRET_ACCESS_KEY` | AWS Bedrock |
+| `AWS_REGION` | AWS Bedrock |
+
+### Custom Port Mapping Example
+
+When running behind a reverse proxy with different external ports:
+
+```bash
+# Map external port 8080/8081 to internal 3000/3001
+export APIMAP_PORT=8080
+export APIMAP_GUI_PORT=8081
+export APIMAP_EXTERNAL_PORT=8080
+export APIMAP_EXTERNAL_GUI_PORT=8081
+
+# With install script
+APIMAP_PORT=8080 APIMAP_GUI_PORT=8081 ./install.sh
+
+# Or with docker-compose
+docker-compose up -d
+```
 
 ## GUI Features
 
@@ -294,23 +279,6 @@ The endpoint aggregates models from all configured providers and route patterns.
 - Request/response logging
 - Error tracking
 - Detailed request inspection
-
-## Environment Variables
-
-All built-in providers support environment variables for API keys:
-
-- `OPENAI_API_KEY` - OpenAI
-- `ANTHROPIC_API_KEY` - Anthropic
-- `GOOGLE_API_KEY` - Google Gemini
-- `GROQ_API_KEY` - Groq
-- `TOGETHER_API_KEY` - Together AI
-- `FIREWORKS_API_KEY` - Fireworks AI
-- `DEEPSEEK_API_KEY` - DeepSeek
-- `MISTRAL_API_KEY` - Mistral AI
-- `COHERE_API_KEY` - Cohere
-- `OPENROUTER_API_KEY` - OpenRouter
-- `PERPLEXITY_API_KEY` - Perplexity
-- `ANYSCALE_API_KEY` - Anyscale
 
 ## Management API
 
@@ -356,73 +324,11 @@ Results are saved to `bench/results/` and `bench/reports/` with detailed metrics
 
 See [BENCHMARK.md](BENCHMARK.md) for detailed documentation.
 
-See [BENCHMARK.md](BENCHMARK.md) for detailed documentation.
+## Advanced Deployment
 
-## Development
+### Docker Run (Direct)
 
-### API Server
-
-```bash
-bun run dev
-```
-
-### GUI
-
-```bash
-cd gui
-bun run dev
-```
-
-### Build GUI for Production
-
-```bash
-cd gui
-bun run build
-```
-
-## Deployment
-
-### Automated Installation (Recommended)
-
-Use the install script for the easiest setup:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/qades/apimap/main/scripts/install.sh | bash
-```
-
-This handles directory creation, permission setup, and provides convenient commands:
-```bash
-~/.local/share/apimap/apimap start   # Start server
-~/.local/share/apimap/apimap stop    # Stop server
-~/.local/share/apimap/apimap logs    # View logs
-~/.local/share/apimap/apimap update  # Update to latest
-```
-
-### Docker Compose
-
-For manual Docker deployment:
-
-```bash
-# 1. Clone the repository
-git clone https://github.com/qades/apimap.git
-cd apimap
-
-# 2. Create directories with correct permissions
-mkdir -p config logs
-
-# Linux/macOS: Set ownership to container user (UID 1001)
-sudo chown -R 1001:1001 config logs
-
-# Alternative (less secure): Make directories world-writable
-# chmod -R 777 config logs
-
-# 3. Start with docker-compose
-docker-compose up -d
-```
-
-### Docker Run
-
-For direct Docker execution:
+For direct Docker execution without compose:
 
 ```bash
 # Create directories with proper permissions
@@ -442,34 +348,15 @@ docker run -d \
   ghcr.io/qades/apimap:latest
 ```
 
-### Docker with Custom Port Mapping
+### Binary Installation (No Docker)
 
-When running behind a reverse proxy or with custom external ports, you must tell the container about the external ports so the GUI can correctly reach the API:
+For systems without Docker, install as a standalone binary:
 
 ```bash
-# Example: Map external port 8080 to internal 3000 (API)
-#          and external port 8081 to internal 3001 (GUI)
-mkdir -p config logs
-sudo chown -R 1001:1001 config logs
-
-docker run -d \
-  --name apimap \
-  --restart unless-stopped \
-  -p 8080:3000 \
-  -p 8081:3001 \
-  -e EXTERNAL_PORT=8080 \
-  -e EXTERNAL_GUI_PORT=8081 \
-  -e OPENAI_API_KEY="$OPENAI_API_KEY" \
-  -v "$(pwd)/config:/app/config:rw" \
-  -v "$(pwd)/logs:/app/logs:rw" \
-  ghcr.io/qades/apimap:latest
+curl -fsSL https://raw.githubusercontent.com/qades/apimap/main/scripts/install.sh | bash -s -- --binary
 ```
 
-Access the services at:
-- API: http://localhost:8080
-- GUI: http://localhost:8081
-
-The `EXTERNAL_PORT` and `EXTERNAL_GUI_PORT` environment variables ensure the GUI knows how to reach the API from the browser's perspective.
+This requires [Bun](https://bun.sh) (auto-installed if missing). The binary will be built from source.
 
 ### Permission Troubleshooting
 
@@ -493,46 +380,36 @@ Simply omit the volume mounts (logs/config will be lost when container stops):
 docker run -d -p 3000:3000 -p 3001:3001 ghcr.io/qades/apimap:latest
 ```
 
-### Environment Variables
-
-#### Port Configuration
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `EXTERNAL_PORT` | External port for API (when using port mapping) | Same as internal port (3000) |
-| `EXTERNAL_GUI_PORT` | External port for GUI (when using port mapping) | Same as internal port (3001) |
-| `API_PORT` | Internal API port (inside container) | 3000 |
-| `GUI_PORT` | Internal GUI port (inside container) | 3001 |
-
-**Important for Docker users:** When mapping ports (e.g., `-p 8080:3000`), always set `EXTERNAL_PORT=8080` so the GUI can correctly reach the API.
-
-#### API Keys
-
-All supported API keys can be passed as environment variables:
-
-| Variable | Provider |
-|----------|----------|
-| `OPENAI_API_KEY` | OpenAI |
-| `ANTHROPIC_API_KEY` | Anthropic |
-| `GOOGLE_API_KEY` | Google Gemini |
-| `GROQ_API_KEY` | Groq |
-| `TOGETHER_API_KEY` | Together AI |
-| `FIREWORKS_API_KEY` | Fireworks AI |
-| `DEEPSEEK_API_KEY` | DeepSeek |
-| `MISTRAL_API_KEY` | Mistral AI |
-| `COHERE_API_KEY` | Cohere |
-| `OPENROUTER_API_KEY` | OpenRouter |
-| `PERPLEXITY_API_KEY` | Perplexity |
-| `ANYSCALE_API_KEY` | Anyscale |
-
 ### Building from Source
 
 ```bash
-# Build the Docker image (image will be lowercase: qades/apimap:latest)
-docker build -t qades/apimap:latest .
+# Build the Docker image
+docker build -t apimap:local .
 
-# Or use docker-compose with local build
-docker-compose build
+# Run locally built image
+docker run -d -p 3000:3000 -p 3001:3001 apimap:local
+```
+
+## Project Structure
+
+```
+apimap/
+├── src/                    # Core source code
+│   ├── types/              # TypeScript type definitions
+│   ├── providers/          # Provider implementations
+│   ├── transformers/       # Format transformers
+│   ├── config/             # Configuration management
+│   ├── logging/            # Logging system
+│   ├── router/             # Request routing
+│   └── server.ts           # Main server entry
+├── gui/                    # SvelteKit management GUI
+├── config/                 # Configuration files
+├── logs/                   # Request logs
+├── scripts/                # Installation scripts
+│   └── install.sh          # Unified install script
+├── bench/                  # Benchmark suite
+├── docker-compose.yml      # Docker Compose configuration
+└── README.md
 ```
 
 ## License

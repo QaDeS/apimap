@@ -5,11 +5,12 @@
 set -e
 
 # Default internal ports (these are what the server binds to inside the container)
+# These are NOT user-configurable directly - use APIMAP_PORT/APIMAP_GUI_PORT from host
 API_PORT="${API_PORT:-3000}"
 GUI_PORT="${GUI_PORT:-3001}"
 
 # External ports (these are what users access from outside the container)
-# If not specified, they default to the internal ports
+# Passed through from APIMAP_EXTERNAL_PORT / APIMAP_EXTERNAL_GUI_PORT
 EXTERNAL_PORT="${EXTERNAL_PORT:-${API_PORT}}"
 EXTERNAL_GUI_PORT="${EXTERNAL_GUI_PORT:-${GUI_PORT}}"
 
