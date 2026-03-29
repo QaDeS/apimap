@@ -388,8 +388,9 @@ def create_summary_page(pdf, data: dict, all_keys: list):
 
 
 def create_streaming_summary_page(pdf, streaming_data: list):
-    """Create a streaming performance summary page."""
-    fig, ax = plt.subplots(figsize=(12, 6))
+    """Create a streaming performance summary page with scatter plots showing distribution and outliers."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+    fig.suptitle('Streaming Performance Analysis', fontsize=16, fontweight='bold', y=0.98)
     
     # Group by protocol
     by_protocol = {}
@@ -402,38 +403,168 @@ def create_streaming_summary_page(pdf, streaming_data: list):
     protocols = sorted(by_protocol.keys())
     targets = sorted(set(r['target'] for r in streaming_data))
     
-    x = np.arange(len(protocols))
-    width = 0.35
+    # --- Left plot: Scatter plot of individual runs (tokens/sec) ---
+    all_tokens_per_sec = []
+    positions = []
+    labels = []
+    colors = []
     
-    # Plot tokens/sec by protocol for each target
-    for i, target in enumerate(targets):
-        values = []
-        for protocol in protocols:
+    pos = 0
+    for protocol in protocols:
+        for target in targets:
             results = [r for r in by_protocol[protocol] if r['target'] == target]
-            if results:
-                values.append(results[0]['tokensPerSec'])
-            else:
-                values.append(0)
-        
-        offset = width * (i - (len(targets) - 1) / 2)
-        bars = ax.bar(x + offset, values, width, label=target,
-                     color=TARGET_COLORS[i % len(TARGET_COLORS)],
-                     edgecolor='black', linewidth=1.2)
-        for bar in bars:
-            height = bar.get_height()
-            if height > 0:
-                ax.text(bar.get_x() + bar.get_width()/2., height,
-                       f'{height:.0f}',
-                       ha='center', va='bottom', fontsize=8)
+            for r in results:
+                runs = r.get('runs', [])
+                if not runs:
+                    # Fallback to aggregate if no individual runs
+                    runs = [{'tokensPerSec': r['tokensPerSec']}]
+                
+                for run in runs:
+                    all_tokens_per_sec.append(run['tokensPerSec'])
+                    positions.append(pos)
+                    labels.append(f"{target}\n{protocol}")
+                    target_idx = targets.index(target)
+                    colors.append(TARGET_COLORS[target_idx % len(TARGET_COLORS)])
+            pos += 1
     
-    ax.set_ylabel('Tokens per Second', fontsize=12, fontweight='bold')
-    ax.set_title('Streaming Performance by Protocol (Higher is Better)', 
-                fontsize=14, fontweight='bold', pad=20)
-    ax.set_xticks(x)
-    ax.set_xticklabels(protocols, rotation=45, ha='right', fontsize=10)
-    ax.legend(fontsize=11)
-    ax.grid(axis='y', alpha=0.3, linestyle='--')
-    ax.set_axisbelow(True)
+    # Create jitter for better visibility
+    jitter = np.random.uniform(-0.15, 0.15, len(positions))
+    
+    ax1.scatter(positions, all_tokens_per_sec, c=colors, alpha=0.6, s=60, edgecolors='black', linewidth=0.5)
+    
+    # Add mean lines
+    pos = 0
+    for protocol in protocols:
+        for target in targets:
+            results = [r for r in by_protocol[protocol] if r['target'] == target]
+            for r in results:
+                mean_val = r['tokensPerSec']
+                ax1.hlines(mean_val, pos - 0.3, pos + 0.3, colors='red', linestyles='--', linewidth=2, alpha=0.8)
+            pos += 1
+    
+    ax1.set_xticks(range(pos))
+    ax1.set_xticklabels([f"{t}\n{p}" for p in protocols for t in targets], rotation=45, ha='right', fontsize=8)
+    ax1.set_ylabel('Tokens per Second', fontsize=11, fontweight='bold')
+    ax1.set_title('Tokens/Sec Distribution (Individual Runs)\nRed line = Mean', fontsize=12, fontweight='bold')
+    ax1.grid(axis='y', alpha=0.3, linestyle='--')
+    ax1.set_axisbelow(True)
+    
+    # --- Right plot: Box plot showing distribution and outliers ---
+    box_data = []
+    box_labels = []
+    box_colors = []
+    
+    for protocol in protocols:
+        for target in targets:
+            results = [r for r in by_protocol[protocol] if r['target'] == target]
+            for r in results:
+                runs = r.get('runs', [])
+                if runs:
+                    values = [run['tokensPerSec'] for run in runs]
+                else:
+                    values = [r['tokensPerSec']]
+                box_data.append(values)
+                box_labels.append(f"{target}\n{protocol}")
+                target_idx = targets.index(target)
+                box_colors.append(TARGET_COLORS[target_idx % len(TARGET_COLORS)])
+    
+    bp = ax2.boxplot(box_data, patch_artist=True, labels=box_labels)
+    
+    # Color the boxes
+    for patch, color in zip(bp['boxes'], box_colors):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.7)
+    
+    # Style the outliers
+    for flier in bp['fliers']:
+        flier.set(marker='o', color='red', alpha=0.5, markersize=6)
+    
+    ax2.set_xticklabels(box_labels, rotation=45, ha='right', fontsize=8)
+    ax2.set_ylabel('Tokens per Second', fontsize=11, fontweight='bold')
+    ax2.set_title('Tokens/Sec Distribution (Box Plot)\nOutliers shown as red dots', fontsize=12, fontweight='bold')
+    ax2.grid(axis='y', alpha=0.3, linestyle='--')
+    ax2.set_axisbelow(True)
+    
+    plt.tight_layout()
+    pdf.savefig(fig, dpi=100)
+    plt.close()
+    
+    # --- Second page: TTFT analysis ---
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+    fig.suptitle('Time to First Token (TTFT) Analysis', fontsize=16, fontweight='bold', y=0.98)
+    
+    # TTFT scatter plot
+    all_ttft = []
+    positions = []
+    colors = []
+    
+    pos = 0
+    for protocol in protocols:
+        for target in targets:
+            results = [r for r in by_protocol[protocol] if r['target'] == target]
+            for r in results:
+                runs = r.get('runs', [])
+                if not runs:
+                    runs = [{'timeToFirstTokenMs': r['timeToFirstTokenMs']}]
+                
+                for run in runs:
+                    all_ttft.append(run['timeToFirstTokenMs'])
+                    positions.append(pos)
+                    target_idx = targets.index(target)
+                    colors.append(TARGET_COLORS[target_idx % len(TARGET_COLORS)])
+            pos += 1
+    
+    jitter = np.random.uniform(-0.15, 0.15, len(positions))
+    ax1.scatter(positions, all_ttft, c=colors, alpha=0.6, s=60, edgecolors='black', linewidth=0.5)
+    
+    # Add mean lines
+    pos = 0
+    for protocol in protocols:
+        for target in targets:
+            results = [r for r in by_protocol[protocol] if r['target'] == target]
+            for r in results:
+                mean_val = r['timeToFirstTokenMs']
+                ax1.hlines(mean_val, pos - 0.3, pos + 0.3, colors='red', linestyles='--', linewidth=2, alpha=0.8)
+            pos += 1
+    
+    ax1.set_xticks(range(pos))
+    ax1.set_xticklabels([f"{t}\n{p}" for p in protocols for t in targets], rotation=45, ha='right', fontsize=8)
+    ax1.set_ylabel('Time to First Token (ms)', fontsize=11, fontweight='bold')
+    ax1.set_title('TTFT Distribution (Individual Runs)\nRed line = Mean', fontsize=12, fontweight='bold')
+    ax1.grid(axis='y', alpha=0.3, linestyle='--')
+    ax1.set_axisbelow(True)
+    
+    # TTFT box plot
+    box_data = []
+    box_colors = []
+    
+    for protocol in protocols:
+        for target in targets:
+            results = [r for r in by_protocol[protocol] if r['target'] == target]
+            for r in results:
+                runs = r.get('runs', [])
+                if runs:
+                    values = [run['timeToFirstTokenMs'] for run in runs]
+                else:
+                    values = [r['timeToFirstTokenMs']]
+                box_data.append(values)
+                target_idx = targets.index(target)
+                box_colors.append(TARGET_COLORS[target_idx % len(TARGET_COLORS)])
+    
+    bp = ax2.boxplot(box_data, patch_artist=True, labels=box_labels)
+    
+    for patch, color in zip(bp['boxes'], box_colors):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.7)
+    
+    for flier in bp['fliers']:
+        flier.set(marker='o', color='red', alpha=0.5, markersize=6)
+    
+    ax2.set_xticklabels(box_labels, rotation=45, ha='right', fontsize=8)
+    ax2.set_ylabel('Time to First Token (ms)', fontsize=11, fontweight='bold')
+    ax2.set_title('TTFT Distribution (Box Plot)\nOutliers shown as red dots', fontsize=12, fontweight='bold')
+    ax2.grid(axis='y', alpha=0.3, linestyle='--')
+    ax2.set_axisbelow(True)
     
     plt.tight_layout()
     pdf.savefig(fig, dpi=100)

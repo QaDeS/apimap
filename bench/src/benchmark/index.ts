@@ -136,6 +136,14 @@ interface StreamingResult {
   chunkCount: number;
   meanChunkLatencyMs: number;
   errors: number;
+  // Individual run data for scatter plot visualization
+  runs?: {
+    timeToFirstTokenMs: number;
+    timeToLastTokenMs: number;
+    tokensPerSec: number;
+    totalTokens: number;
+    chunkCount: number;
+  }[];
 }
 
 interface FeatureResult {
@@ -800,6 +808,15 @@ async function benchmarkStreaming(
     };
   }
   
+  // Store individual runs for scatter plot visualization
+  const runs = results.map(r => ({
+    timeToFirstTokenMs: r.timeToFirstTokenMs,
+    timeToLastTokenMs: r.timeToLastTokenMs,
+    tokensPerSec: r.tokensPerSec,
+    totalTokens: r.totalTokens,
+    chunkCount: r.chunkCount,
+  }));
+  
   return {
     target: client.getName(),
     scenario: protocol ? `streaming-${protocol.sourceFormat}` : 'streaming',
@@ -811,6 +828,7 @@ async function benchmarkStreaming(
     chunkCount: Math.floor(mean(results.map(r => r.chunkCount))),
     meanChunkLatencyMs: mean(results.map(r => r.meanChunkLatencyMs)),
     errors,
+    runs,
   };
 }
 
