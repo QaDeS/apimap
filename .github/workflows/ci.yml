@@ -68,6 +68,7 @@ jobs:
             type=sha,prefix=                  # short SHA (7 chars)
             type=sha,prefix=,format=long      # full SHA (40 chars)
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -107,7 +108,11 @@ jobs:
           ## Docker Image
 
           \`\`\`bash
+          # Specific version (immutable)
           docker pull ghcr.io/${REPO}:${DOCKER_TAG}
+
+          # Latest
+          docker pull ghcr.io/${REPO}:latest
           \`\`\`
 
           ## Quick Start
