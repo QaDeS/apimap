@@ -21,9 +21,9 @@
         <p class="text-sm font-medium text-gray-600">Total</p>
         <p class="text-2xl font-bold text-gray-900">{formatNumber(stats.total)}</p>
         {#if stats.streaming > 0}
-          <p class="text-xs text-blue-600">{stats.streaming} ● stream</p>
+          <p class="text-base font-semibold text-blue-600">{stats.streaming} ● stream</p>
         {:else}
-          <p class="text-xs text-gray-400">-</p>
+          <p class="text-base font-semibold text-gray-400">-</p>
         {/if}
       </div>
       <div class="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
@@ -39,9 +39,9 @@
         <p class="text-sm font-medium text-gray-600">Routed</p>
         <p class="text-2xl font-bold text-green-600">{formatNumber(stats.routed)}</p>
         {#if stats.unrouted > 0}
-          <p class="text-xs text-orange-600">{stats.unrouted} ⚠️</p>
+          <p class="text-base font-semibold text-orange-600">{stats.unrouted} ⚠️</p>
         {:else}
-          <p class="text-xs text-gray-400">-</p>
+          <p class="text-base font-semibold text-gray-400">-</p>
         {/if}
       </div>
       <div class="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">
@@ -57,9 +57,9 @@
         <p class="text-sm font-medium text-gray-600">Running</p>
         <p class="text-2xl font-bold text-amber-600">{formatNumber(stats.running)}</p>
         {#if stats.runningStreaming > 0}
-          <p class="text-xs text-blue-600">{stats.runningStreaming} streaming</p>
+          <p class="text-base font-semibold text-blue-600">{stats.runningStreaming} streaming</p>
         {:else}
-          <p class="text-xs text-gray-400">-</p>
+          <p class="text-base font-semibold text-gray-400">-</p>
         {/if}
       </div>
       <div class="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center">
@@ -75,9 +75,9 @@
         <p class="text-sm font-medium text-gray-600">Completed</p>
         <p class="text-2xl font-bold text-purple-600">{formatNumber(stats.completed)}</p>
         {#if stats.errors > 0}
-          <p class="text-xs text-red-600">{stats.errors} ✗</p>
+          <p class="text-base font-semibold text-red-600">{stats.errors} ✗</p>
         {:else}
-          <p class="text-xs text-gray-400">-</p>
+          <p class="text-base font-semibold text-gray-400">-</p>
         {/if}
       </div>
       <div class="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center">
@@ -93,9 +93,9 @@
         <p class="text-sm font-medium text-gray-600">Avg</p>
         <p class="text-2xl font-bold text-gray-900">{stats.avgLatency} <span class="text-sm font-normal">ms</span></p>
         {#if stats.avgTokensPerSecond > 0}
-          <p class="text-xs text-gray-600">{stats.avgTokensPerSecond} t/s</p>
+          <p class="text-base font-semibold text-gray-600">{stats.avgTokensPerSecond} t/s</p>
         {:else}
-          <p class="text-xs text-gray-400">-</p>
+          <p class="text-base font-semibold text-gray-400">-</p>
         {/if}
       </div>
       <div class="w-10 h-10 bg-gray-50 rounded-lg flex items-center justify-center">

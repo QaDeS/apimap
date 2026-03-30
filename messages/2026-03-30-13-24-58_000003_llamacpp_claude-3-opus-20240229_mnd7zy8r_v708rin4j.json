@@ -1,0 +1,66 @@
+{
+  "timestamp": "2026-03-30T13:24:58.779Z",
+  "requestId": "mnd7zy8r_v708rin4j",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "sourceScheme": "openai-chat",
+  "targetScheme": "openai-chat",
+  "provider": "llamacpp",
+  "model": "claude-3-opus-20240229",
+  "targetModel": "LFM2-24B-A2B-Q4_K_M",
+  "requestHeaders": {
+    "accept": "*/*",
+    "accept-encoding": "gzip, deflate",
+    "accept-language": "en-US,en;q=0.9,de;q=0.8",
+    "connection": "keep-alive",
+    "content-length": "178",
+    "content-type": "application/json",
+    "host": "mk-x2:3456",
+    "origin": "http://mk-x2:3001",
+    "referer": "http://mk-x2:3001/",
+    "sec-gpc": "1",
+    "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+  },
+  "requestBody": {
+    "model": "claude-3-opus-20240229",
+    "max_tokens": 1024,
+    "temperature": 0.7,
+    "stream": true,
+    "messages": [
+      {
+        "role": "user",
+        "content": "test"
+      }
+    ],
+    "chat_template_kwargs": {
+      "enable_thinking": true
+    }
+  },
+  "transformedBody": {
+    "model": "LFM2-24B-A2B-Q4_K_M",
+    "messages": [
+      {
+        "role": "user",
+        "content": "test"
+      }
+    ],
+    "max_tokens": 1024,
+    "temperature": 0.7,
+    "stream": true,
+    "chat_template_kwargs": {
+      "enable_thinking": true
+    }
+  },
+  "responseStatus": 200,
+  "durationMs": 33,
+  "routed": true,
+  "matchedPattern": "claude-3*",
+  "providerUrl": "http://host.containers.internal:58080/v1/chat/completions",
+  "authScheme": {
+    "header": "Authorization",
+    "prefix": "Bearer ",
+    "maskedKey": "***"
+  },
+  "stream": true,
+  "error": "Unable to connect. Is the computer able to access the url?"
+}

@@ -151,11 +151,17 @@
 
     <!-- Streaming Indicator -->
     {#if log.stream}
-      <span class="flex-shrink-0" title="Streaming request">
-        <span class="relative flex h-2 w-2">
-          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-          <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
-        </span>
+      <span class="flex-shrink-0" title={status === 'streaming' || status === 'pending' ? 'Streaming in progress' : 'Was streaming'}>
+        {#if status === 'streaming' || status === 'pending'}
+          <!-- Animated indicator for active streaming -->
+          <span class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+          </span>
+        {:else}
+          <!-- Static indicator for completed streaming -->
+          <span class="inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+        {/if}
       </span>
     {/if}
 
