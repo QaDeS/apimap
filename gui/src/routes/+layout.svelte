@@ -7,11 +7,9 @@
     Route, 
     Settings, 
     Database, 
-    Activity,
     Menu,
     X,
-    Beaker,
-    Activity as MonitorIcon
+    Beaker
   } from '@lucide/svelte';
   import { page } from '$app/stores';
   import { serverInfoApi } from '$lib/utils/api';
@@ -29,12 +27,11 @@
   const navItems = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/test', label: 'Test Models', icon: Beaker },
-    { path: '/monitor', label: 'Monitor', icon: MonitorIcon },
     { path: '/providers', label: 'Providers', icon: Server },
     { path: '/routes', label: 'Routes', icon: Route },
     { path: '/config', label: 'Configuration', icon: Settings },
     { path: '/backups', label: 'Backups', icon: Database },
-    { path: '/logs', label: 'Logs', icon: Activity },
+    // Monitor and Logs are now integrated into Dashboard
   ];
 
   function closeMobileMenu() {

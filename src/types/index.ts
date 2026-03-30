@@ -447,6 +447,18 @@ export interface LogEntry {
   durationMs: number;
   routed: boolean;
   matchedPattern?: string;
+  /** Provider base URL used for the request */
+  providerUrl?: string;
+  /** Authentication scheme details */
+  authScheme?: {
+    header: string;
+    prefix: string;
+    maskedKey: string;
+  };
+  /** Whether the request used streaming */
+  stream?: boolean;
+  /** Tokens per second for the response */
+  tokensPerSecond?: number;
 }
 
 // ============================================================================

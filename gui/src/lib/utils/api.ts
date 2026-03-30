@@ -94,6 +94,19 @@ export interface SystemStatus {
   averageLatency: number;
 }
 
+export interface DashboardStats {
+  total: number;
+  streaming: number;
+  routed: number;
+  unrouted: number;
+  running: number;
+  runningStreaming: number;
+  completed: number;
+  errors: number;
+  avgLatency: number;
+  avgTokensPerSecond: number;
+}
+
 export interface ProviderInfo {
   id: string;
   name: string;
@@ -199,6 +212,18 @@ export interface LogEntry {
   durationMs: number;
   routed: boolean;
   matchedPattern?: string;
+  /** Provider base URL used for the request */
+  providerUrl?: string;
+  /** Authentication scheme details */
+  authScheme?: {
+    header: string;
+    prefix: string;
+    maskedKey: string;
+  };
+  /** Whether the request used streaming */
+  stream?: boolean;
+  /** Tokens per second for the response */
+  tokensPerSecond?: number;
 }
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {

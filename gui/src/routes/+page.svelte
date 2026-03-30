@@ -1,208 +1,369 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { AlertTriangle, CheckCircle, Activity, Clock, Server, Route, Zap, Plus, X, Eye, RefreshCw } from '@lucide/svelte';
+  import { onMount, onDestroy } from 'svelte';
+  import { 
+    Activity, 
+    Wifi, 
+    WifiOff, 
+    Loader2,
+    RefreshCw
+  } from '@lucide/svelte';
+  import type { LogEntry, ProviderInfo, DashboardStats } from '$lib/utils/api';
+  import { getWsUrl, providersApi } from '$lib/utils/api';
+  import StatsBar from '$lib/components/StatsBar.svelte';
+  import MessageFilters from '$lib/components/MessageFilters.svelte';
+  import Pagination from '$lib/components/Pagination.svelte';
+  import MessageTile from '$lib/components/MessageTile.svelte';
+
+  // State
+  let logs = $state<LogEntry[]>([]);
+  let expandedLogId = $state<string | null>(null);
+  let activeTabs = $state<Record<string, string>>({});
+  let providers = $state<ProviderInfo[]>([]);
   
-  import { resolveApiUrl } from '$lib/utils/api';
-  const API_URL = resolveApiUrl();
+  // WebSocket state
+  let ws = $state<WebSocket | null>(null);
+  let connected = $state(false);
+  let connecting = $state(false);
+  let reconnectTimer = $state<ReturnType<typeof setTimeout> | null>(null);
+  
+  // Filters
+  let searchFilter = $state('');
+  let statusFilter = $state<'all' | 'streaming' | 'pending' | 'completed' | 'error' | 'unrouted'>('all');
+  let providerFilter = $state<string>('all');
+  let timeRangeFilter = $state<'1h' | '24h' | '7d' | 'all'>('all');
+  
+  // Pagination
+  let currentPage = $state(1);
+  let itemsPerPage = $state(10);
 
-  // Check if we're in dev mode (Vite env)
-  const isDev = import.meta.env.DEV;
-
-  // Simple local state
-  let status = $state<any>(null);
-  let unrouted: any[] = $state([]);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
-  let apiUrl = $state<string>(API_URL);
-
-  // Fetch with timeout
-  async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 5000): Promise<Response> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  // Derived: calculate stats
+  let stats = $derived((): DashboardStats => {
+    const total = logs.length;
+    const streaming = logs.filter(l => l.stream).length;
+    const routed = logs.filter(l => l.routed).length;
+    const unrouted = logs.filter(l => !l.routed).length;
+    const completed = logs.filter(l => l.routed && l.responseStatus < 400 && !l.error).length;
+    const errors = logs.filter(l => l.error || l.responseStatus >= 400).length;
     
-    try {
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal
+    // For running/pending, we'd need active request tracking via WebSocket
+    // For now, estimate based on recent logs without end time
+    const running = 0; // Will be updated from active requests
+    const runningStreaming = 0;
+    
+    const totalLatency = logs.reduce((sum, l) => sum + l.durationMs, 0);
+    const avgLatency = total > 0 ? Math.round(totalLatency / total) : 0;
+    
+    const logsWithTps = logs.filter(l => l.tokensPerSecond);
+    const avgTokensPerSecond = logsWithTps.length > 0
+      ? Math.round(logsWithTps.reduce((sum, l) => sum + (l.tokensPerSecond || 0), 0) / logsWithTps.length)
+      : 0;
+    
+    return {
+      total,
+      streaming,
+      routed,
+      unrouted,
+      running,
+      runningStreaming,
+      completed,
+      errors,
+      avgLatency,
+      avgTokensPerSecond
+    };
+  });
+
+  // Derived: filter logs
+  let filteredLogs = $derived(() => {
+    let result = [...logs];
+    
+    // Search filter
+    if (searchFilter) {
+      const search = searchFilter.toLowerCase();
+      result = result.filter(l => 
+        l.model?.toLowerCase().includes(search) ||
+        l.targetModel?.toLowerCase().includes(search) ||
+        l.provider?.toLowerCase().includes(search) ||
+        l.requestId?.toLowerCase().includes(search)
+      );
+    }
+    
+    // Status filter
+    if (statusFilter !== 'all') {
+      result = result.filter(l => {
+        if (statusFilter === 'unrouted') return !l.routed;
+        if (statusFilter === 'error') return l.error || l.responseStatus >= 400;
+        if (statusFilter === 'completed') return l.routed && l.responseStatus < 400 && !l.error;
+        if (statusFilter === 'streaming') return l.stream;
+        return true;
       });
-      clearTimeout(timeoutId);
-      return response;
-    } catch (err) {
-      clearTimeout(timeoutId);
-      if (err instanceof Error && err.name === 'AbortError') {
-        throw new Error(`Request timeout after ${timeoutMs}ms - API server not responding`);
-      }
-      throw err;
     }
-  }
+    
+    // Provider filter
+    if (providerFilter !== 'all') {
+      result = result.filter(l => l.provider === providerFilter);
+    }
+    
+    // Time range filter
+    if (timeRangeFilter !== 'all') {
+      const now = Date.now();
+      const ranges = {
+        '1h': 60 * 60 * 1000,
+        '24h': 24 * 60 * 60 * 1000,
+        '7d': 7 * 24 * 60 * 60 * 1000,
+      };
+      const cutoff = now - ranges[timeRangeFilter];
+      result = result.filter(l => new Date(l.timestamp).getTime() > cutoff);
+    }
+    
+    // Sort by timestamp desc
+    result.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    
+    return result;
+  });
 
-  async function loadData() {
-    console.log('Loading data from:', API_URL);
+  // Derived: paginate
+  let paginatedLogs = $derived(() => {
+    const filtered = filteredLogs();
+    const start = (currentPage - 1) * itemsPerPage;
+    return filtered.slice(start, start + itemsPerPage);
+  });
+
+  let totalPages = $derived(() => {
+    return Math.max(1, Math.ceil(filteredLogs().length / itemsPerPage));
+  });
+
+  // Load providers
+  async function loadProviders() {
     try {
-      const res = await fetchWithTimeout(`${API_URL}/admin/status`);
-      if (!res.ok) throw new Error(`Failed to load status: HTTP ${res.status}`);
-      status = await res.json();
-      error = null; // Clear any previous error
-      
-      const unroutedRes = await fetchWithTimeout(`${API_URL}/admin/unrouted`);
-      if (unroutedRes.ok) {
-        const data = await unroutedRes.json();
-        unrouted = data.unrouted;
-      }
+      const data = await providersApi.getAll();
+      providers = data.registered;
     } catch (err) {
-      console.error('Failed to load data:', err);
-      error = err instanceof Error ? err.message : 'Unknown error';
-    } finally {
-      loading = false;
+      console.error('Failed to load providers:', err);
     }
   }
 
-  function retry() {
-    loading = true;
-    error = null;
-    loadData();
+  // WebSocket connection
+  async function connect() {
+    if (ws?.readyState === WebSocket.OPEN) return;
+    if (connecting) return;
+
+    connecting = true;
+
+    try {
+      const wsUrl = getWsUrl() + '/ws';
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        connected = true;
+        connecting = false;
+        console.log('[Dashboard] WebSocket connected');
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          handleWebSocketMessage(data);
+        } catch (err) {
+          console.error('[Dashboard] Failed to parse message:', err);
+        }
+      };
+
+      ws.onclose = () => {
+        connected = false;
+        connecting = false;
+        ws = null;
+        console.log('[Dashboard] WebSocket disconnected');
+        reconnectTimer = setTimeout(connect, 3000);
+      };
+
+      ws.onerror = (err) => {
+        console.error('[Dashboard] WebSocket error:', err);
+        connecting = false;
+      };
+    } catch (err) {
+      console.error('[Dashboard] Failed to connect:', err);
+      connecting = false;
+      reconnectTimer = setTimeout(connect, 5000);
+    }
   }
+
+  function disconnect() {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    if (ws) {
+      ws.close();
+      ws = null;
+    }
+    connected = false;
+  }
+
+  function handleWebSocketMessage(data: unknown) {
+    if (typeof data !== 'object' || data === null) return;
+    const msg = data as Record<string, unknown>;
+
+    if (msg.type === 'initial_logs' && Array.isArray(msg.logs)) {
+      // Initial logs from server
+      logs = msg.logs as LogEntry[];
+    } else if (msg.type === 'log_entry' && msg.entry) {
+      // New log entry - add to beginning, dedupe by requestId
+      const entry = msg.entry as LogEntry;
+      logs = [entry, ...logs.filter(l => l.requestId !== entry.requestId)];
+    }
+  }
+
+  // Toggle expand/collapse
+  function toggleLog(requestId: string) {
+    if (expandedLogId === requestId) {
+      expandedLogId = null;
+    } else {
+      expandedLogId = requestId;
+      // Set default tab if not set
+      if (!activeTabs[requestId]) {
+        activeTabs = { ...activeTabs, [requestId]: 'message' };
+      }
+    }
+  }
+
+  // Change tab
+  function setTab(requestId: string, tab: string) {
+    activeTabs = { ...activeTabs, [requestId]: tab };
+  }
+
+  // Reset pagination when filters change
+  $effect(() => {
+    // Track filter changes
+    const _ = searchFilter + statusFilter + providerFilter + timeRangeFilter;
+    currentPage = 1;
+  });
 
   onMount(() => {
-    loadData();
-    const interval = setInterval(loadData, 5000);
-    return () => clearInterval(interval);
+    loadProviders();
+    connect();
+  });
+
+  onDestroy(() => {
+    disconnect();
   });
 </script>
 
+<svelte:head>
+  <title>Dashboard - API Map</title>
+</svelte:head>
+
 <div class="space-y-6">
-  <div>
-    <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
-    <p class="text-gray-600 mt-1">Overview of your model router</p>
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-3">
+        <Activity class="text-blue-600" size={28} />
+        Dashboard
+      </h1>
+      <p class="text-gray-600 mt-1">Real-time view of requests flowing through the router</p>
+    </div>
+
+    <!-- Connection Status -->
+    <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg border"
+        class:border-green-200={connected}
+        class:bg-green-50={connected}
+        class:text-green-700={connected}
+        class:border-red-200={!connected}
+        class:bg-red-50={!connected}
+        class:text-red-700={!connected}
+      >
+        {#if connected}
+          <Wifi size={16} />
+          <span class="text-sm font-medium">Live</span>
+        {:else if connecting}
+          <Loader2 size={16} class="animate-spin" />
+          <span class="text-sm font-medium">Connecting...</span>
+        {:else}
+          <WifiOff size={16} />
+          <span class="text-sm font-medium">Offline</span>
+        {/if}
+      </div>
+
+      {#if !connected}
+        <button
+          onclick={connect}
+          disabled={connecting}
+          class="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium flex items-center gap-1.5 hover:bg-blue-700 disabled:opacity-50"
+        >
+          <RefreshCw size={14} />
+          Reconnect
+        </button>
+      {/if}
+    </div>
   </div>
 
-  {#if loading}
-    <div class="text-center py-12 text-gray-500">
-      <div class="inline-block animate-spin mr-2">
-        <RefreshCw size={20} />
-      </div>
-      Connecting to API at {apiUrl}...
-    </div>
-  {:else if error}
-    <div class="bg-red-50 border border-red-200 rounded-lg p-4">
-      <div class="flex items-start gap-3">
-        <AlertTriangle class="text-red-500 flex-shrink-0 mt-0.5" size={20} />
-        <div class="flex-1">
-          <h3 class="font-medium text-red-800">Connection Error</h3>
-          {#if isDev}
-            <!-- Detailed error in dev mode -->
-            <p class="text-red-700 text-sm mt-1">{error}</p>
-            <p class="text-red-600 text-xs mt-2">API URL: {apiUrl}</p>
+  <!-- Stats Bar -->
+  <StatsBar stats={stats()} />
+
+  <!-- Filters -->
+  <MessageFilters
+    search={searchFilter}
+    status={statusFilter}
+    provider={providerFilter}
+    timeRange={timeRangeFilter}
+    {providers}
+    filteredCount={filteredLogs().length}
+    totalCount={logs.length}
+    onSearchChange={(v) => searchFilter = v}
+    onStatusChange={(v) => statusFilter = v}
+    onProviderChange={(v) => providerFilter = v}
+    onTimeRangeChange={(v) => timeRangeFilter = v}
+  />
+
+  <!-- Pagination (top) -->
+  {#if filteredLogs().length > 0}
+    <Pagination
+      {currentPage}
+      totalPages={totalPages()}
+      {itemsPerPage}
+      onPageChange={(p) => currentPage = p}
+      onItemsPerPageChange={(v) => { itemsPerPage = v; currentPage = 1; }}
+    />
+  {/if}
+
+  <!-- Message List -->
+  <div class="space-y-3">
+    {#if paginatedLogs().length === 0}
+      <div class="bg-white rounded-xl border border-gray-200 p-12 text-center">
+        <Activity size={48} class="text-gray-300 mx-auto mb-4" />
+        <h3 class="text-lg font-medium text-gray-900 mb-1">No requests to display</h3>
+        <p class="text-gray-500">
+          {#if filteredLogs().length === 0 && logs.length > 0}
+            Try adjusting your filters
+          {:else if !connected}
+            Waiting for WebSocket connection...
           {:else}
-            <!-- Generic error in production -->
-            <p class="text-red-700 text-sm mt-1">Unable to connect to the API server. Please try again later.</p>
+            Requests will appear here when they come in through the router.
           {/if}
-          
-          {#if isDev && (error.includes('timeout') || error.includes('Failed to fetch') || error.includes('NetworkError'))}
-            <div class="mt-3 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-              <p class="text-yellow-800 text-sm font-medium">API Server Not Running?</p>
-              <p class="text-yellow-700 text-xs mt-1">
-                The GUI requires the API server to be running. Try one of these:
-              </p>
-              <ul class="text-yellow-700 text-xs mt-1 ml-4 list-disc">
-                <li>Run from project root: <code class="bg-yellow-100 px-1 rounded">bun run dev</code></li>
-                <li>Or run API separately: <code class="bg-yellow-100 px-1 rounded">bun run start</code></li>
-              </ul>
-            </div>
-          {/if}
-          
-          <button 
-            onclick={retry}
-            class="mt-3 px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 text-sm font-medium rounded-lg flex items-center gap-2 transition-colors"
-          >
-            <RefreshCw size={14} />
-            Retry
-          </button>
-        </div>
+        </p>
       </div>
-    </div>
-  {:else if status}
-    <!-- Stats Grid -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      <div class="bg-white rounded-xl border border-gray-200 p-6">
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-sm font-medium text-gray-600">Total Requests</p>
-            <p class="text-2xl font-bold text-gray-900 mt-1">{status.totalRequests.toLocaleString()}</p>
-          </div>
-          <div class="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center">
-            <Activity class="text-blue-600" size={24} />
-          </div>
-        </div>
-      </div>
-
-      <div class="bg-white rounded-xl border border-gray-200 p-6">
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-sm font-medium text-gray-600">Routed</p>
-            <p class="text-2xl font-bold text-green-600 mt-1">{status.routedRequests.toLocaleString()}</p>
-          </div>
-          <div class="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center">
-            <CheckCircle class="text-green-600" size={24} />
-          </div>
-        </div>
-      </div>
-
-      <div class="bg-white rounded-xl border border-gray-200 p-6">
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-sm font-medium text-gray-600">Unrouted</p>
-            <p class="text-2xl font-bold {status.unroutedRequests > 0 ? 'text-red-600' : 'text-gray-900'} mt-1">
-              {status.unroutedRequests.toLocaleString()}
-            </p>
-          </div>
-          <div class="w-12 h-12 rounded-lg flex items-center justify-center {status.unroutedRequests > 0 ? 'bg-red-50' : 'bg-gray-50'}">
-            <AlertTriangle class={status.unroutedRequests > 0 ? 'text-red-600' : 'text-gray-400'} size={24} />
-          </div>
-        </div>
-      </div>
-
-      <div class="bg-white rounded-xl border border-gray-200 p-6">
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-sm font-medium text-gray-600">Avg Latency</p>
-            <p class="text-2xl font-bold text-gray-900 mt-1">{status.averageLatency}ms</p>
-          </div>
-          <div class="w-12 h-12 bg-purple-50 rounded-lg flex items-center justify-center">
-            <Clock class="text-purple-600" size={24} />
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Unrouted Requests -->
-    {#if unrouted.length > 0}
-      <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <AlertTriangle class="text-red-500" size={24} />
-            <div>
-              <h2 class="text-lg font-semibold text-gray-900">Unrouted Requests</h2>
-              <p class="text-sm text-gray-600">These requests couldn't be routed</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="divide-y divide-gray-200">
-          {#each unrouted.slice(0, 5) as request}
-            <div class="p-4">
-              <div class="flex items-center justify-between">
-                <div>
-                  <span class="font-mono text-sm font-medium text-gray-900">{request.model}</span>
-                  <div class="text-sm text-gray-500 mt-1">
-                    {request.endpoint} · {new Date(request.timestamp).toLocaleTimeString()}
-                  </div>
-                </div>
-              </div>
-            </div>
-          {/each}
-        </div>
-      </div>
+    {:else}
+      {#each paginatedLogs() as log (log.requestId)}
+        <MessageTile
+          {log}
+          isExpanded={expandedLogId === log.requestId}
+          activeTab={activeTabs[log.requestId] || 'message'}
+          onToggle={() => toggleLog(log.requestId)}
+          onTabChange={(tab) => setTab(log.requestId, tab)}
+        />
+      {/each}
     {/if}
+  </div>
+
+  <!-- Pagination (bottom) -->
+  {#if filteredLogs().length > 0}
+    <Pagination
+      {currentPage}
+      totalPages={totalPages()}
+      {itemsPerPage}
+      onPageChange={(p) => currentPage = p}
+      onItemsPerPageChange={(v) => { itemsPerPage = v; currentPage = 1; }}
+    />
   {/if}
 </div>

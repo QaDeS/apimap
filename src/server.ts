@@ -481,8 +481,20 @@ async function handleRequest(
   // Build provider request
   const providerReq = provider.buildRequest(transformedReq, req.headers);
   const timeoutMs = provider.getTimeoutMs(config.server?.timeout);
+  const providerConfig = config.providers[route.provider];
+  
+  // Get auth info from builtin providers or config
+  const builtinProvider = BUILTIN_PROVIDERS[route.provider];
+  const providerAuthHeader = providerConfig?.authHeader || builtinProvider?.authHeader || "Authorization";
+  const providerAuthPrefix = providerConfig?.authPrefix || builtinProvider?.authPrefix || "Bearer ";
 
-  log.info(`${requestId} ${scheme.format}:${model} → ${route.provider}:${route.model} (stream=${body.stream ?? false})`);
+  log.info(`${requestId} ${scheme.format}:${model} → ${route.provider}:${route.model} (stream=${streamMode})`);
+
+  // Helper to mask API key
+  function maskApiKey(key: string): string {
+    if (!key || key.length <= 10) return "***";
+    return `${key.slice(0, 4)}...${key.slice(-4)}`;
+  }
 
   // Log entry
   const logEntry: LogEntry = {
@@ -502,6 +514,13 @@ async function handleRequest(
     durationMs: 0,
     routed: true,
     matchedPattern: route.pattern,
+    providerUrl: providerReq.url,
+    authScheme: {
+      header: providerAuthHeader,
+      prefix: providerAuthPrefix,
+      maskedKey: maskApiKey(providerConfig?.apiKey || provider.getApiKey() || ""),
+    },
+    stream: streamMode,
   };
 
   try {
@@ -566,6 +585,18 @@ async function handleRequest(
     }
     logEntry.responseBody = clientResp;
     logEntry.durationMs = Date.now() - startTime;
+    
+    // Calculate tokens per second
+    if (typeof clientResp === 'object' && clientResp !== null) {
+      const resp = clientResp as Record<string, unknown>;
+      const usage = resp.usage as { completion_tokens?: number } | undefined;
+      if (usage?.completion_tokens && logEntry.durationMs > 0) {
+        logEntry.tokensPerSecond = Math.round(
+          (usage.completion_tokens / logEntry.durationMs) * 1000
+        );
+      }
+    }
+    
     await state.logging.log(logEntry);
 
     // Update tracking with response
@@ -1007,6 +1038,14 @@ async function createStreamingResponse(
       // Store the full concatenated response instead of just streaming metadata
       logEntry.responseBody = fullContent || fullReasoningContent || { type: "streaming", chunkCount: chunkIndex };
       logEntry.durationMs = Date.now() - startTime;
+      
+      // Calculate tokens per second for streaming
+      if (outputTokens > 0 && logEntry.durationMs > 0) {
+        logEntry.tokensPerSecond = Math.round(
+          (outputTokens / logEntry.durationMs) * 1000
+        );
+      }
+      
       state.logging.log(logEntry).catch(console.error);
       
       // Mark as completed - include final content
