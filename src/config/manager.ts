@@ -14,6 +14,11 @@ export interface ConfigBackup {
   path: string;
   createdAt: Date;
   size: number;
+  name?: string;
+}
+
+interface BackupMetadata {
+  backups: Record<string, { name?: string }>;
 }
 
 export interface ConfigChangeEvent {
@@ -72,6 +77,37 @@ export class ConfigManager {
     if (!existsSync(this.backupDir)) {
       await mkdir(this.backupDir, { recursive: true });
     }
+  }
+
+  /**
+   * Get the metadata file path
+   */
+  private getMetadataPath(): string {
+    return join(this.backupDir, "metadata.json");
+  }
+
+  /**
+   * Load backup metadata
+   */
+  private async loadMetadata(): Promise<BackupMetadata> {
+    const metadataPath = this.getMetadataPath();
+    if (!existsSync(metadataPath)) {
+      return { backups: {} };
+    }
+    try {
+      const content = await readFile(metadataPath, "utf-8");
+      return JSON.parse(content) as BackupMetadata;
+    } catch {
+      return { backups: {} };
+    }
+  }
+
+  /**
+   * Save backup metadata
+   */
+  private async saveMetadata(metadata: BackupMetadata): Promise<void> {
+    const metadataPath = this.getMetadataPath();
+    await writeFile(metadataPath, JSON.stringify(metadata, null, 2), "utf-8");
   }
 
   /**
@@ -187,7 +223,7 @@ export class ConfigManager {
 
     // Create backup before saving
     if (createBackup && existsSync(this.configPath)) {
-      await this.createBackup();
+      await this.createBackup("Auto-save before config change");
     }
 
     // Serialize to YAML with comments
@@ -208,6 +244,9 @@ export class ConfigManager {
     // Update modification time
     const stats = await stat(this.configPath);
     this.lastModified = stats.mtime;
+
+    // Clear active backup marker since we now have a modified config
+    await this.clearActiveBackup();
 
     this.notifyChange("full");
   }
@@ -341,7 +380,7 @@ export class ConfigManager {
   /**
    * Create a backup of the current config
    */
-  async createBackup(): Promise<ConfigBackup> {
+  async createBackup(name?: string): Promise<ConfigBackup> {
     await this.ensureBackupDir();
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -352,11 +391,19 @@ export class ConfigManager {
 
     const stats = await stat(backupPath);
 
+    // Save metadata if name provided
+    if (name) {
+      const metadata = await this.loadMetadata();
+      metadata.backups[filename] = { name };
+      await this.saveMetadata(metadata);
+    }
+
     return {
       filename,
       path: backupPath,
       createdAt: stats.mtime,
       size: stats.size,
+      ...(name ? { name } : {}),
     };
   }
 
@@ -367,18 +414,22 @@ export class ConfigManager {
     await this.ensureBackupDir();
 
     const files = await readdir(this.backupDir);
+    const metadata = await this.loadMetadata();
     const backups: ConfigBackup[] = [];
 
     for (const filename of files) {
+      if (filename === "metadata.json" || filename === ".active") continue;
       if (filename.endsWith(".yaml") || filename.endsWith(".yml")) {
         const filepath = join(this.backupDir, filename);
         try {
           const stats = await stat(filepath);
+          const meta = metadata.backups[filename];
           backups.push({
             filename,
             path: filepath,
             createdAt: stats.mtime,
             size: stats.size,
+            ...(meta?.name ? { name: meta.name } : {}),
           });
         } catch {
           // Skip unreadable files
@@ -407,8 +458,18 @@ export class ConfigManager {
 
     await copyFile(backupPath, this.configPath);
     await this.load();
+    await this.setActiveBackup(filename);
 
     this.notifyChange("full");
+  }
+
+  /**
+   * Rename a backup (updates metadata, not filename)
+   */
+  async renameBackup(filename: string, name: string): Promise<void> {
+    const metadata = await this.loadMetadata();
+    metadata.backups[filename] = { name };
+    await this.saveMetadata(metadata);
   }
 
   /**
@@ -419,6 +480,51 @@ export class ConfigManager {
 
     if (existsSync(backupPath)) {
       await unlink(backupPath);
+    }
+
+    // Clean up metadata
+    const metadata = await this.loadMetadata();
+    if (metadata.backups[filename]) {
+      delete metadata.backups[filename];
+      await this.saveMetadata(metadata);
+    }
+
+    // Clear active marker if this was the active backup
+    const active = await this.getActiveBackup();
+    if (active === filename) {
+      await this.clearActiveBackup();
+    }
+  }
+
+  /**
+   * Get the active backup filename
+   */
+  async getActiveBackup(): Promise<string | null> {
+    const activePath = join(this.backupDir, ".active");
+    if (!existsSync(activePath)) return null;
+    try {
+      const content = await readFile(activePath, "utf-8");
+      return content.trim() || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Set the active backup filename
+   */
+  private async setActiveBackup(filename: string): Promise<void> {
+    const activePath = join(this.backupDir, ".active");
+    await writeFile(activePath, filename, "utf-8");
+  }
+
+  /**
+   * Clear the active backup marker
+   */
+  private async clearActiveBackup(): Promise<void> {
+    const activePath = join(this.backupDir, ".active");
+    if (existsSync(activePath)) {
+      await unlink(activePath);
     }
   }
 

@@ -188,6 +188,7 @@ export interface ConfigBackup {
   path: string;
   createdAt: string;
   size: number;
+  name?: string;
 }
 
 export interface LogEntry {
@@ -298,13 +299,21 @@ export const configApi = {
 
 // Backup API
 export const backupApi = {
-  list: () => fetchApi<{ backups: ConfigBackup[] }>('/backups'),
-  create: () =>
-    fetchApi<{ backup: ConfigBackup }>('/backups', { method: 'POST' }),
+  list: () => fetchApi<{ backups: ConfigBackup[]; activeBackup: string | null }>('/backups'),
+  create: (name?: string) =>
+    fetchApi<{ backup: ConfigBackup }>('/backups', { 
+      method: 'POST', 
+      body: JSON.stringify({ name }) 
+    }),
   restore: (filename: string) =>
     fetchApi<{ success: boolean }>(`/backups/${encodeURIComponent(filename)}`, { method: 'POST' }),
   delete: (filename: string) =>
     fetchApi<{ success: boolean }>(`/backups/${encodeURIComponent(filename)}`, { method: 'DELETE' }),
+  update: (filename: string, updates: { name?: string }) =>
+    fetchApi<{ success: boolean }>(`/backups/${encodeURIComponent(filename)}`, { 
+      method: 'PUT', 
+      body: JSON.stringify(updates) 
+    }),
 };
 
 // Unrouted requests API

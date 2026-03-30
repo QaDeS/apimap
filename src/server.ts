@@ -1232,13 +1232,14 @@ function handleManagementAPI(req: Request, url: URL): Promise<Response> | Respon
   // Backup endpoints
   if (path === "/backups") {
     if (req.method === "GET") return handleListBackups(corsHeaders);
-    if (req.method === "POST") return handleCreateBackup(corsHeaders);
+    if (req.method === "POST") return handleCreateBackup(req, corsHeaders);
   }
 
   if (path.startsWith("/backups/")) {
     const filename = path.replace("/backups/", "");
     if (req.method === "POST") return handleRestoreBackup(filename, corsHeaders);
     if (req.method === "DELETE") return handleDeleteBackup(filename, corsHeaders);
+    if (req.method === "PUT") return handleUpdateBackup(filename, req, corsHeaders);
   }
 
   // Unrouted requests endpoint
@@ -1477,7 +1478,8 @@ async function handleSaveConfig(req: Request, headers: Record<string, string>): 
 async function handleListBackups(headers: Record<string, string>): Promise<Response> {
   try {
     const backups = await state.config.listBackups();
-    return new Response(JSON.stringify({ backups }), { 
+    const activeBackup = await state.config.getActiveBackup();
+    return new Response(JSON.stringify({ backups, activeBackup }), { 
       headers: { "Content-Type": "application/json", ...headers } 
     });
   } catch (error) {
@@ -1488,10 +1490,38 @@ async function handleListBackups(headers: Record<string, string>): Promise<Respo
   }
 }
 
-async function handleCreateBackup(headers: Record<string, string>): Promise<Response> {
+async function handleCreateBackup(req: Request, headers: Record<string, string>): Promise<Response> {
   try {
-    const backup = await state.config.createBackup();
+    let name: string | undefined;
+    
+    try {
+      const body = await req.json() as { name?: string };
+      name = body.name;
+    } catch {
+      // No body or invalid JSON - create backup without metadata
+    }
+    
+    const backup = await state.config.createBackup(name);
     return new Response(JSON.stringify({ backup }), { 
+      headers: { "Content-Type": "application/json", ...headers } 
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ error: String(error) }), { 
+      status: 500, 
+      headers: { "Content-Type": "application/json", ...headers } 
+    });
+  }
+}
+
+async function handleUpdateBackup(filename: string, req: Request, headers: Record<string, string>): Promise<Response> {
+  try {
+    const body = await req.json() as { name?: string };
+    
+    if (body.name !== undefined) {
+      await state.config.renameBackup(filename, body.name);
+    }
+    
+    return new Response(JSON.stringify({ success: true }), { 
       headers: { "Content-Type": "application/json", ...headers } 
     });
   } catch (error) {
