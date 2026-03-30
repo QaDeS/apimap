@@ -134,7 +134,14 @@ export abstract class BaseProvider {
    * Override in subclasses for provider-specific mappings
    */
   getEndpointUrl(format: string): string {
-    const baseUrl = this.config.baseUrl;
+    // Ensure baseUrl is not empty - fallback to default if needed
+    let baseUrl = this.config.baseUrl?.trim();
+    if (!baseUrl) {
+      // Try to get default from builtin providers
+      const { BUILTIN_PROVIDERS } = require("./builtin.ts");
+      const builtin = BUILTIN_PROVIDERS[this.id];
+      baseUrl = builtin?.defaultBaseUrl || "";
+    }
 
     // Default: OpenAI-compatible providers (standard /v1 paths)
     // Note: baseUrl should NOT include /v1 - it's added here as part of the endpoint path

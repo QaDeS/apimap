@@ -118,9 +118,9 @@
   const tabs = [
     { id: 'message', label: 'Message' },
     { id: 'request', label: 'Request' },
-    { id: 'transformedRequest', label: 'T Req' },
+    { id: 'transformedRequest', label: 'Transformed Request' },
     { id: 'response', label: 'Response' },
-    { id: 'transformedResponse', label: 'T Res' },
+    { id: 'transformedResponse', label: 'Transformed Response' },
     { id: 'metadata', label: 'Metadata' },
   ];
 </script>

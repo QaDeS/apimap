@@ -1304,8 +1304,19 @@ function handleGetProviders(headers: Record<string, string>): Response {
 async function handleUpdateProviders(req: Request, headers: Record<string, string>): Promise<Response> {
   try {
     const body = await req.json() as { providers: Record<string, ProviderConfig> };
-    await state.config.updateProviders(body.providers);
-    providerRegistry.initializeFromConfig(body.providers);
+    
+    // Normalize provider configs: empty baseUrl should use default
+    const normalizedProviders: Record<string, ProviderConfig> = {};
+    for (const [id, config] of Object.entries(body.providers)) {
+      const builtin = BUILTIN_PROVIDERS[id];
+      normalizedProviders[id] = {
+        ...config,
+        baseUrl: config.baseUrl?.trim() || builtin?.defaultBaseUrl || config.baseUrl,
+      };
+    }
+    
+    await state.config.updateProviders(normalizedProviders);
+    providerRegistry.initializeFromConfig(normalizedProviders);
     
     return new Response(JSON.stringify({ success: true }), { 
       headers: { "Content-Type": "application/json", ...headers } 

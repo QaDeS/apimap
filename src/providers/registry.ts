@@ -153,13 +153,19 @@ export class ProviderRegistry {
     for (const [id, info] of Object.entries(BUILTIN_PROVIDERS)) {
       const userConfig = configs[id];
 
+      // Normalize: empty baseUrl should use default
+      const baseUrl = userConfig?.baseUrl?.trim() 
+        ? userConfig.baseUrl 
+        : info.defaultBaseUrl;
+
       const mergedConfig: ProviderConfig = {
-        baseUrl: info.defaultBaseUrl,
+        baseUrl,
         apiKeyEnv: info.defaultApiKeyEnv,
         authHeader: info.authHeader,
         authPrefix: info.authPrefix,
         supportsStreaming: info.supportsStreaming,
         ...userConfig, // User config overrides defaults
+        baseUrl, // Ensure normalized baseUrl is used
       };
 
       this.register(id, mergedConfig);
