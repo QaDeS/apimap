@@ -162,50 +162,48 @@
     class="w-full px-6 py-4 text-left"
     onclick={onToggle}
   >
-    <div class="flex items-center justify-between">
-      <div class="flex items-center gap-4 min-w-0">
-        <!-- Success/Error Indicator -->
-        {#if isSuccess}
-          <CheckCircle class="text-green-500 shrink-0" size={20} />
-        {:else}
-          <AlertCircle class="text-red-500 shrink-0" size={20} />
-        {/if}
+    <div class="flex items-center gap-4">
+      <!-- Left: Status Icon -->
+      {#if isSuccess}
+        <CheckCircle class="text-green-500 shrink-0" size={20} />
+      {:else}
+        <AlertCircle class="text-red-500 shrink-0" size={20} />
+      {/if}
 
-        <!-- Model Info -->
-        <div class="min-w-0">
-          <div class="flex items-center gap-2 flex-wrap">
+      <!-- Middle: 2 lines -->
+      <div class="flex-1 min-w-0">
+        <!-- Line 1: Model → Target → Badges (left) ... Time (right) -->
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
             <span class="font-mono text-sm font-medium text-gray-900">{log.model}</span>
             <ArrowRight size={14} class="text-gray-400" />
             <span class="font-mono text-sm text-gray-600">{log.targetModel}</span>
+            {#if log.stream}
+              <span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">stream</span>
+            {/if}
             {#if !log.routed}
-              <span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-medium rounded-full">
-                Unrouted
-              </span>
+              <span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-medium rounded-full">Unrouted</span>
             {/if}
           </div>
-          <div class="flex items-center gap-4 mt-1 text-sm text-gray-500">
-            <span>{log.provider}</span>
-            <span>⏰ {formatTime(log.timestamp)}</span>
+          <span class="text-xs text-gray-400 shrink-0">{formatTime(log.timestamp)}</span>
+        </div>
+        <!-- Line 2: Provider pill → Prompt (left, expands) ... Duration (right) -->
+        <div class="flex items-center justify-between mt-0.5">
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs font-medium rounded shrink-0">{log.provider}</span>
+            <span class="text-sm text-gray-500 truncate" title={prompt}>{truncatePrompt(prompt, 100)}</span>
           </div>
+          <span class="text-sm font-medium text-gray-600 shrink-0 ml-2">
+            {formatDuration(log.durationMs)}
+            {#if log.stream && log.latencyMs}
+              <span class="text-gray-400"> / </span><span class="text-gray-500">{formatDuration(log.latencyMs)}</span>
+            {/if}
+          </span>
         </div>
       </div>
 
-      <div class="flex flex-col items-end gap-1 flex-shrink-0">
-        <!-- Duration -->
-        <span class="text-sm font-medium text-gray-600">
-          {formatDuration(log.durationMs)}
-        </span>
-        
-        <!-- Tokens/Second -->
-        {#if tps}
-          <span class="text-xs text-gray-500">
-            {tps} t/s
-          </span>
-        {/if}
-      </div>
-
-      <div class="flex items-center gap-3 flex-shrink-0">
-        <!-- HTTP Status Pill -->
+      <!-- Right: Status Pill + Chevron -->
+      <div class="flex items-center gap-2 flex-shrink-0">
         <span 
           class="px-2 py-1 rounded text-sm font-mono"
           class:bg-green-100={log.responseStatus < 400}
@@ -215,19 +213,12 @@
         >
           {log.responseStatus}
         </span>
-
-        <!-- Expand/Collapse Chevron -->
         {#if isExpanded}
           <ChevronUp size={20} class="text-gray-400" />
         {:else}
           <ChevronDown size={20} class="text-gray-400" />
         {/if}
       </div>
-    </div>
-
-    <!-- Prompt Preview (2nd line) -->
-    <div class="mt-2 text-sm text-gray-600 truncate pl-9" title={prompt}>
-      {truncatePrompt(prompt, 100)}
     </div>
   </button>
 

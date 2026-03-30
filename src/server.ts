@@ -1043,8 +1043,32 @@ async function createStreamingResponse(
         await writer.write(encoder.encode("data: [DONE]\n\n"));
       }
 
-      // Store the full concatenated response instead of just streaming metadata
-      logEntry.responseBody = fullContent || fullReasoningContent || { type: "streaming", chunkCount: chunkIndex };
+      // Build proper response objects for logging (similar to non-streaming)
+      // Note: sourceFormat = client format, targetFormat = upstream format
+      
+      // Construct internal response from streaming data
+      const internalResp: InternalResponse = {
+        id: requestId || `stream_${Date.now()}`,
+        model: model,
+        content: fullContent ? [{ type: "text" as const, text: fullContent }] : [],
+        stopReason: finalStopReason as InternalResponse["stopReason"] || "end_turn",
+        usage: outputTokens > 0 ? { completionTokens: outputTokens, promptTokens: 0, totalTokens: outputTokens } : undefined,
+      };
+      
+      // Add thinking content if present (for reasoning models)
+      if (fullReasoningContent) {
+        internalResp.content.unshift({ type: "thinking" as const, text: fullReasoningContent });
+      }
+      
+      // Convert to client format
+      const clientResp = transformers.toProviderResponse(sourceFormat, internalResp);
+      
+      // Store both raw upstream and transformed response when format conversion happened
+      if (sourceFormat !== targetFormat) {
+        logEntry.rawUpstreamResponse = internalResp;
+        logEntry.transformedResponse = clientResp;
+      }
+      logEntry.responseBody = clientResp;
       logEntry.durationMs = Date.now() - startTime;
       
       // Calculate tokens per second for streaming
@@ -1098,9 +1122,28 @@ async function createStreamingResponse(
         }
       }
       
-      // Update log entry with info - include full content if available
+      // Build proper response objects for logging even on error/disconnect
+      const internalRespError: InternalResponse = {
+        id: requestId || `stream_${Date.now()}`,
+        model: model,
+        content: fullContent ? [{ type: "text" as const, text: fullContent }] : [],
+        stopReason: "end_turn",
+        usage: outputTokens > 0 ? { completionTokens: outputTokens, promptTokens: 0, totalTokens: outputTokens } : undefined,
+      };
+      
+      if (fullReasoningContent) {
+        internalRespError.content.unshift({ type: "thinking" as const, text: fullReasoningContent });
+      }
+      
+      const clientRespError = transformers.toProviderResponse(sourceFormat, internalRespError);
+      
+      // Update log entry with info
       logEntry.error = isClientDisconnect ? undefined : errorMessage;
-      logEntry.responseBody = fullContent || fullReasoningContent || { type: "streaming", chunkCount: chunkIndex, aborted: true };
+      if (sourceFormat !== targetFormat) {
+        logEntry.rawUpstreamResponse = internalRespError;
+        logEntry.transformedResponse = clientRespError;
+      }
+      logEntry.responseBody = clientRespError;
       logEntry.durationMs = Date.now() - startTime;
       state.logging.log(logEntry).catch(console.error);
       
